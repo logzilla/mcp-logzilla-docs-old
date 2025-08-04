@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  logzilla-docs-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: logzilla-docs-server
+    ports:
+      - "127.0.0.1:8008:8008"
+    volumes:
+      # Mount docs directory (adjust path as needed)
+      - ../docs:/app/docs:ro
+      # Optional: Mount logs directory
+      - ./logs:/app/logs
+      # Optional: Mount model cache to persist models between container rebuilds
+      # - ./model_cache:/root/.cache/huggingface:rw
+    environment:
+      # MCP server configuration
+      - MCP_TRANSPORT=http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8008
+      - MCP_SERVER_NAME=logzilla-docs-server
+      - MCP_DESCRIPTION=logzilla documentation
+      # Optional: Additional MCP settings
+      - MCP_DOCS_PATH=/app/docs
+      - MCP_DEVICE=auto
+      # - MCP_OAUTH_ENABLED=false
+      # - MCP_RUN_OAUTH_SERVER=false
+      # - MCP_SSL_CERT_PATH=
+      # - MCP_SSL_KEY_PATH=
+      # Optional: Enable debug logging
+      - PYTHONUNBUFFERED=1
+    command: >
+      python server.py 
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/help"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  default:
+    name: logzilla-docs-network
