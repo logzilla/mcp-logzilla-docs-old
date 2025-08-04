@@ -9,7 +9,6 @@ The MCP Documentation Server provides full Docker support with:
 - **Production-ready configurations** with health checks and restart policies
 - **Volume strategies** for documentation and data persistence
 - **Development workflows** with hot reload capabilities
-- **Production deployment** patterns for scalable setups
 
 ## 📁 Docker Directory Structure
 
@@ -176,70 +175,11 @@ services:
     restart: "no"  # Don't restart automatically during development
 ```
 
-Run development mode:
-```bash
-# Start development environment
-docker-compose -f compose.yml -f compose.dev.yml up --build
 
-# Code changes will be reflected when you restart the container
 ```
 
-### Production Configuration
+Execution examples:
 
-Create a production override file `compose.prod.yml`:
-
-```yaml
-# compose.prod.yml
-services:
-  logzilla-docs-server:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      target: production
-    container_name: logzilla-docs-server-prod
-    ports:
-      - "0.0.0.0:8008:8008"  # Expose to all interfaces for production
-    volumes:
-      # Production documentation mount
-      - /var/lib/company-docs:/app/docs:ro
-      - ./logs:/app/logs
-      - docs-cache:/app/cache
-    environment:
-      - MCP_TRANSPORT=http
-      - MCP_HOST=0.0.0.0
-      - MCP_PORT=8008
-      - MCP_SERVER_NAME=logzilla-docs-server
-      - MCP_DESCRIPTION=company documentation
-      - MCP_DOCS_PATH=/app/docs
-      - MCP_DEVICE=auto
-      - PYTHONUNBUFFERED=1
-    restart: always
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8008/help"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1.0'
-        reservations:
-          memory: 1G
-          cpus: '0.5'
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-        max-file: "10"
-
-volumes:
-  docs-cache:
-    driver: local
-```
-
-Deploy production:
 ```bash
 # Start production deployment
 docker-compose -f compose.yml -f compose.prod.yml up -d --build
@@ -285,13 +225,10 @@ docker run -it --rm \
 ### Building and Testing Images
 
 ```bash
-# Build development image
+# Build image
 docker build --target development -t mcp-docs-server:dev -f docker/Dockerfile .
 
-# Build production image
-docker build --target production -t mcp-docs-server:prod -f docker/Dockerfile .
-
-# Test production image with current settings
+# Test image with current settings
 docker run --rm -p 127.0.0.1:8008:8008 \
   -e MCP_TRANSPORT=http \
   -e MCP_PORT=8008 \
@@ -303,7 +240,7 @@ docker run --rm -p 127.0.0.1:8008:8008 \
 curl http://127.0.0.1:8008/help
 ```
 
-## 🏗️ Production Deployment Strategies
+## 🏗️ Deployment Strategies
 
 ### Single Container Deployment
 

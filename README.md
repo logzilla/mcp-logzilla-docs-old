@@ -54,8 +54,8 @@ cd model-context-protocol/docs-server
 # Install dependencies
 pip install -r requirements.txt
 
-# Start the server (HTTP mode on port 8000)  
-python server.py --transport http --port 8000 --docs /path/to/your/docs
+# Start the server (HTTP mode on port 8008)  
+python server.py --transport http --port 8008 --docs /path/to/your/docs
 
 # Or start in MCP stdio mode (for direct integration)
 python server.py --transport stdio --docs /path/to/your/docs
@@ -74,27 +74,9 @@ cd model-context-protocol/docs-server/docker
 # Start the server
 docker-compose up -d
 
-# The server will be available at http://localhost:8000
+# The server will be available at http://localhost:8008
 ```
 
-### Documentation Directory Requirements
-
-Your documentation directory should contain:
-- Markdown files (`.md`) 
-- Organized in any subdirectory structure you prefer
-- All files will be automatically indexed and searchable
-
-Example structure:
-```
-/your/docs/path/
-├── getting-started.md
-├── api/
-│   ├── authentication.md
-│   └── endpoints.md
-├── guides/
-│   └── deployment.md
-└── troubleshooting.md
-```
 
 ## MCP Client Configuration
 
@@ -193,8 +175,7 @@ Either add the following, or merge the "mcpServers" section:
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd model-context-protocol/docs-server
+git clone git@github.com:logzilla/mcp-logzilla-docs.git
 
 # Create virtual environment (recommended)
 python -m venv venv
@@ -257,7 +238,7 @@ The server supports multiple configuration methods with environment variables ta
 # Transport and Network
 export MCP_TRANSPORT="http"              # Transport mode: stdio, http, https
 export MCP_HOST="localhost"              # Server bind address (default: localhost)
-export MCP_PORT="8000"                   # Server port (default: 8000)
+export MCP_PORT="8008"                   # Server port (default: 8008)
 export MCP_SERVER_NAME="docs-server"     # Server identifier (default: docs-server)
 export MCP_DESCRIPTION="company documentation"  # Server description
 
@@ -283,7 +264,7 @@ Create a `.env` file in the project root:
 # .env file example
 MCP_TRANSPORT=http
 MCP_HOST=localhost
-MCP_PORT=8000
+MCP_PORT=8008
 MCP_DOCS_PATH=/path/to/your/documentation
 MCP_DEVICE=auto
 MCP_SERVER_NAME=docs-server
@@ -316,7 +297,6 @@ python server.py --transport https --port 8443
 For Docker deployments, modify `compose.yml`:
 
 ```yaml
-version: '3.8'
 services:
   docs-server:
     build:
@@ -324,7 +304,7 @@ services:
       dockerfile: docker/Dockerfile
     container_name: docs-server
     ports:
-      - "8000:8000"
+      - "8008:8008"
     volumes:
       # IMPORTANT: Mount YOUR documentation directory here
       - /path/to/your/documentation:/app/docs:ro
@@ -332,7 +312,7 @@ services:
     environment:
       - MCP_TRANSPORT=http
       - MCP_HOST=0.0.0.0
-      - MCP_PORT=8000
+      - MCP_PORT=8008
       - MCP_DOCS_PATH=/app/docs
       - MCP_DEVICE=auto
       - PYTHONUNBUFFERED=1
@@ -351,7 +331,7 @@ services:
 
 ```bash
 # Basic usage with your documentation directory
-python server.py --transport http --port 8000 --docs /path/to/your/docs
+python server.py --transport http --port 8008 --docs /path/to/your/docs
 
 # All available options
 python server.py \
@@ -366,24 +346,18 @@ python server.py \
   --ssl-key /path/to/key.pem
 ```
 
-#### Development Mode
+#### Examples
 ```bash
-# Start in development mode with hot reload
-python server.py --transport http --port 8000 --device auto
+# Basic start with auto vector device
+python server.py --transport http --port 8008 --device auto
 
 # Start in MCP stdio mode (for direct MCP client integration)  
 python server.py --transport stdio
 
 # Start with HTTPS (requires SSL certificates)
 python server.py --transport https --port 8443
-```
 
-#### Production Mode
-```bash
-# Production HTTP server
-python server.py --transport http --host localhost --port 8000
-
-# Production HTTPS server  
+# HTTPS server  
 MCP_SSL_CERT_PATH="/etc/ssl/certs/server.crt" \
 MCP_SSL_KEY_PATH="/etc/ssl/private/server.key" \
 python server.py --transport https --port 8443
@@ -414,13 +388,13 @@ Add to your Claude Desktop configuration:
 #### Direct HTTP Integration
 ```bash
 # Test server availability
-curl http://localhost:8000/help
+curl http://localhost:8008/help
 
 # List available tools
-curl http://localhost:8000/tools/list
+curl http://localhost:8008/tools/list
 
 # Access documentation catalog
-curl http://localhost:8000/resources
+curl http://localhost:8008/resources
 ```
 
 ## 🔧 API Reference
@@ -633,13 +607,13 @@ pytest tests/test_stdio.py -v
 #### HTTP Endpoints
 ```bash
 # Health check
-curl http://localhost:8000/help
+curl http://localhost:8008/help
 
 # List tools
-curl http://localhost:8000/tools/list
+curl http://localhost:8008/tools/list
 
 # Test search functionality
-curl -X POST http://localhost:8000/tools/call \
+curl -X POST http://localhost:8008/tools/call \
   -H "Content-Type: application/json" \
   -d '{
     "name": "search_for_documents",
@@ -651,7 +625,7 @@ curl -X POST http://localhost:8000/tools/call \
 
 # Test with authentication
 curl -H "Authorization: Bearer your-api-key" \
-  http://localhost:8000/resources
+  http://localhost:8008/resources
 ```
 
 #### MCP Integration Testing
@@ -685,8 +659,8 @@ asyncio.run(test_mcp())
 
 ```bash
 # Clone and setup development environment
-git clone <repository-url>
-cd model-context-protocol/docs-server
+git clone 
+cd docs-server
 
 # Create virtual environment
 python -m venv venv
@@ -721,10 +695,10 @@ mypy . --ignore-missing-imports
 #### Hot Reload Development
 ```bash
 # Start server with auto-reload for development
-python server.py --transport http --port 8000 --device auto
+python server.py --transport http --port 8008 --device auto
 
 # Or use uvicorn directly for HTTP mode (if FastAPI mode is available)
-uvicorn server:app --reload --port 8000
+uvicorn server:app --reload --port 8008
 ```
 
 ### Adding New Features
@@ -750,7 +724,7 @@ uvicorn server:app --reload --port 8000
 export PYTHONPATH=/path/to/docs-server
 
 # Start with verbose output
-python server.py --transport http --port 8000 --device auto
+python server.py --transport http --port 8008 --device auto
 ```
 
 #### Common Debugging Scenarios
@@ -929,7 +903,6 @@ Create a production `compose.prod.yml` file:
 
 ```yaml
 # compose.prod.yml
-version: '3.8'
 services:
   docs-server:
     image: mcp-docs-server:latest
@@ -1040,7 +1013,7 @@ WantedBy=multi-user.target
 curl https://localhost:8443/help
 
 # Health check via MCP tool (requires MCP client)
-curl -X POST http://localhost:8000/tools/call \
+curl -X POST http://localhost:8008/tools/call \
   -H "Content-Type: application/json" \
   -d '{"name": "health_check", "arguments": {}}'
 ```
@@ -1050,7 +1023,7 @@ curl -X POST http://localhost:8000/tools/call \
 # Logging is controlled by Python's logging module
 # Server outputs structured logs to stderr by default
 # Redirect to file using shell redirection:
-python server.py --transport http --port 8000 2>/var/log/mcp-docs-server.log
+python server.py --transport http --port 8008 2>/var/log/mcp-docs-server.log
 ```
 
 ### Log Analysis Examples
@@ -1090,7 +1063,7 @@ export MCP_DEVICE="cpu"                    # Force CPU if GPU issues
 export MCP_MAX_FILE_SIZE="5242880"        # Reduce max file size
 
 # Restart server to rebuild indices (indices rebuild automatically on startup)
-python server.py --transport http --port 8000 --device cpu
+python server.py --transport http --port 8008 --device cpu
 ```
 
 #### 3. Document Indexing Problems
@@ -1119,10 +1092,10 @@ export MCP_DEVICE="cpu"                   # Force CPU-only mode
 #### 5. Network and Connectivity
 ```bash
 # Test local connectivity
-curl -v http://localhost:8000/help
+curl -v http://localhost:8008/help
 
 # Test with authentication (if OAuth is enabled)
-curl -H "Authorization: Bearer your-oauth-token" http://localhost:8000/resources
+curl -H "Authorization: Bearer your-oauth-token" http://localhost:8008/resources
 
 # Debug HTTPS issues
 openssl s_client -connect localhost:8443 -servername localhost
@@ -1131,7 +1104,7 @@ openssl s_client -connect localhost:8443 -servername localhost
 ### Debug Mode
 ```bash
 # Enable comprehensive debugging
-python server.py --transport http --port 8000 --device auto
+python server.py --transport http --port 8008 --device auto
 ```
 
 ## 🤝 Contributing
