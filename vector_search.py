@@ -182,14 +182,10 @@ class SentenceTransformerProvider:
             pass
 
 
-
-
-
 @dataclass
 class EmbeddedDocumentChunk(DocumentChunk):
     """DocumentChunk with embedding vector"""
     embedding: Optional[np.ndarray] = None
-
 
 class VectorSearchEngine(SearchEngine):
     """Vector-based search engine for semantic similarity matching"""
@@ -247,7 +243,7 @@ class VectorSearchEngine(SearchEngine):
         logger.info("Initializing vector search engine")
         try:
             logger.info("VectorSearchEngine.initialize(): Loading documents from cache")
-            await self.load_documents_from_cache()
+            await self._load_documents_from_cache()
             self._index_ready = True
             logger.info("Vector search engine initialized")
             if on_ready_fn:
@@ -275,11 +271,11 @@ class VectorSearchEngine(SearchEngine):
         
         # Rebuild index after adding all documents
         if count > 0:
-            await self.build_index()
+            await self._build_index()
             
         return count
     
-    async def build_index(self) -> None:
+    async def _build_index(self) -> None:
         """Rebuild FAISS vector index from current chunks"""
         if not self.chunks:
             self._cleanup_faiss_index()
@@ -315,7 +311,7 @@ class VectorSearchEngine(SearchEngine):
         self._index_ready = True
         logger.info(f"Built FAISS index: {len(self.chunks)} chunks, {self.dimension}D vectors")
     
-    async def load_documents_from_cache(self) -> int:
+    async def _load_documents_from_cache(self) -> int:
         """Load all documents from the document cache and build the vector index
         
         Returns:
@@ -328,47 +324,25 @@ class VectorSearchEngine(SearchEngine):
         # Clear existing index
         self.clear_index()
         
-        # Convert cached documents to Document objects
-        documents = []
+        # Process cached documents directly without copying content
+        count = 0
         for cached_doc in self.document_cache._documents.values():
-            # Convert CachedDocument to Document
-            document = Document(
-                id=cached_doc.id,
-                name=cached_doc.name,
-                path=cached_doc.path,
-                size=cached_doc.size,
-                content=cached_doc.content,
-                created_at=cached_doc.created_at,
-                updated_at=cached_doc.updated_at,
-                metadata={"file_modified": cached_doc.file_modified}
+            chunks_added = self._add_document(
+                cached_doc.id, 
+                cached_doc.content, 
+                {"file_modified": cached_doc.file_modified}
             )
-            documents.append(document)
+            if chunks_added > 0:
+                count += 1
         
-        # Add documents to index
-        count = await self.add_documents(documents)
+        # Rebuild index after adding all documents
+        if count > 0:
+            await self._build_index()
+            
         logger.info(f"Loaded {count} documents from cache into vector index")
         
         return count
-    
-    async def refresh_from_cache(self) -> int:
-        """Refresh the index from the document cache if cache has been updated
-        
-        Returns:
-            Number of documents loaded, or 0 if no refresh needed
-        """
-        if not self.document_cache:
-            return 0
-        
-        # Check if cache has been updated since our last index build
-        cache_last_scan = getattr(self.document_cache, 'last_scan', None)
-        if cache_last_scan and self.last_updated and cache_last_scan <= self.last_updated:
-            # Cache hasn't been updated since our last build
-            logger.debug("Document cache hasn't changed, skipping refresh")
-            return 0
-        
-        # Reload from cache
-        return await self.load_documents_from_cache()
-        
+       
     def search(self, query: str, top_k: int = 10) -> List[SearchResult]:
         """Search documents using vector similarity
         
@@ -480,7 +454,6 @@ class VectorSearchEngine(SearchEngine):
         
         logger.info(f"Added document {document_id} with {len(embedded_chunks)} chunks")
         return len(embedded_chunks)
-
 
     def chunk_document(self, document_id: str, content: str, metadata: Optional[Dict] = None) -> List[DocumentChunk]:
         """

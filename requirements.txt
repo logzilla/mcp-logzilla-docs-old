@@ -15,8 +15,7 @@ pydantic>=2.5.0
 pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 
-# OAuth Authentication (optional but recommended for production)
-mcp-oauth>=0.0.5
+
 
 # Search Engine Dependencies
 rank-bm25>=0.2.2              # BM25 keyword search

@@ -82,8 +82,6 @@ class SearchTools:
         # Note: Engines are created but need explicit initialize() call
         logger.info("SearchTools.__init__(): Created engines, call initialize() to make them ready")
         
-        
-    
     @property
     def is_ready(self) -> bool:
         """Check if search index is ready"""
@@ -209,7 +207,6 @@ class SearchTools:
             logger.error(f"Failed to search for documents: {e}")
             return {"error": f"Failed to search for documents: {str(e)}"}
         
-
     def search_and_get_documents(self, search_request: SearchRequest) -> Dict[str, Any]:
         """
         Search for documents and return complete document contents.
@@ -258,7 +255,6 @@ class SearchTools:
         except Exception as e:
             logger.error(f"Failed to search for documents: {e}")
             return {"error": f"Failed to search for documents: {str(e)}"}
-
 
     def _rrf_fusion(self, bm25_results, vector_results, limit: int, k: int = 60):
         """Reciprocal Rank Fusion - combines results based on rank positions.

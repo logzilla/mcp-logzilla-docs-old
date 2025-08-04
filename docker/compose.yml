@@ -23,8 +23,7 @@ services:
       # Optional: Additional MCP settings
       - MCP_DOCS_PATH=/app/docs
       - MCP_DEVICE=auto
-      # - MCP_OAUTH_ENABLED=false
-      # - MCP_RUN_OAUTH_SERVER=false
+
       # - MCP_SSL_CERT_PATH=
       # - MCP_SSL_KEY_PATH=
       # Optional: Enable debug logging

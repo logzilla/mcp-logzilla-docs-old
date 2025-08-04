@@ -92,16 +92,14 @@ class BM25SearchEngine(SearchEngine):
     
     async def initialize(self, on_ready_fn: Optional[Callable[[bool], None]] = None) -> None:
         """Initialize the BM25 search engine"""
-        await self.load_documents_from_cache()
-        await self.build_index()
+        await self._load_documents_from_cache()
+        await self._build_index()
         self._index_ready = True
         logger.info("BM25 search engine initialized")
         if on_ready_fn:
             on_ready_fn(True)
     
-
-    
-    async def build_index(self) -> None:
+    async def _build_index(self) -> None:
         """Rebuild BM25 index from current chunks"""
         if not self.chunks:
             self.index = None
@@ -121,7 +119,7 @@ class BM25SearchEngine(SearchEngine):
         logger.info(f"Built BM25 index: {len(self.chunks)} chunks, {len(self.vocabulary)} unique tokens")
         self._status = "index built, search engine ready"
     
-    async def load_documents_from_cache(self) -> int:
+    async def _load_documents_from_cache(self) -> int:
         """Load all documents from the document cache
         
         Returns:
@@ -166,7 +164,7 @@ class BM25SearchEngine(SearchEngine):
             return 0
         
         # Reload from cache
-        return self.load_documents_from_cache()
+        return self._load_documents_from_cache()
         
     def _add_document(self, document_id: str, content: str, metadata: Optional[Dict] = None) -> int:
         """
@@ -197,7 +195,6 @@ class BM25SearchEngine(SearchEngine):
         
         logger.info(f"Added document {document_id} with {len(new_chunks)} chunks")
         return len(new_chunks)
-
 
     def chunk_document(self, document_id: str, content: str, metadata: Optional[Dict] = None) -> List[DocumentChunk]:
         """

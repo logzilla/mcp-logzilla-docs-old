@@ -71,7 +71,6 @@ class DocumentRequest(BaseModel):
         extra = "forbid"
         validate_assignment = True
 
-
 class Document:
     """Document model for hybrid search system"""
     
@@ -158,7 +157,6 @@ class SearchRequest(BaseModel):
         extra = "forbid"
         validate_assignment = True
 
-
 @dataclass
 class SearchResult:
     """
@@ -170,7 +168,6 @@ class SearchResult:
     """
     document_id: str
     score: float
-
 
 class SearchEngine(ABC):
     """Abstract base class for search engines"""
@@ -190,7 +187,7 @@ class SearchEngine(ABC):
         pass
     
     @abstractmethod
-    def build_index(self) -> None:
+    def _build_index(self) -> None:
         """Build the search index"""
         pass
         

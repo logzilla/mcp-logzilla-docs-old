@@ -10,7 +10,7 @@ Features:
 - Tests all MCP tools (search_for_documents, search_and_retrieve_documents, health_check)
 - Tests MCP resources (document retrieval)
 - Supports both HTTP and stdio transports
-- Tests both public and private (OAuth) servers
+- Tests public server
 - Comprehensive error handling and reporting
 - Detailed output with timing information
 
@@ -32,8 +32,7 @@ Just check HTTP connectivity:
 Test with verbose output:
     python mcp_client_test.py -v -H localhost -p 8000
 
-Test including private OAuth endpoints:
-    python mcp_client_test.py --test-private -H localhost -p 8000
+
 
 Requirements:
 - pip install mcp
@@ -495,7 +494,7 @@ class MCPClientTest:
             },
             {
                 "name": "Specific technical query",
-                "query": "authentication OAuth MCP protocol",
+                "query": "authentication MCP protocol",
                 "top_k": 5,
                 "min_quality": 30,
                 "include_scores": True
@@ -532,66 +531,11 @@ class MCPClientTest:
             except Exception as e:
                 self.logger.error(f"✗ {test_case['name']} failed: {e}")
 
-    async def test_private_server(self):
-        """Test private server endpoints (requires OAuth token)."""
-        self.logger.info("\n--- Testing Private Server (OAuth Required) ---")
-        
-        try:
-            # Try to connect to private server
-            await self.connect_http("private-docs-server")
-            
-            # Test admin tools
-            await self._test_admin_health_check()
-            await self._test_admin_search()
-            
-        except Exception as e:
-            self.logger.warning(f"Private server test failed (expected if OAuth not configured): {e}")
 
-    async def _test_admin_health_check(self):
-        """Test admin health check tool."""
-        self.logger.info("Testing admin health check...")
-        if not self.session:
-            self.logger.error("✗ No active session")
-            return
-            
-        try:
-            response = await self.session.call_tool("admin_health_check", {})
-            
-            if response.content:
-                content_text = self._extract_content_text(response.content)
-                if content_text:
-                    result = json.loads(content_text)
-                    self.logger.info(f"✓ Admin health check: {result.get('status', 'unknown')}")
-            
-        except Exception as e:
-            self.logger.error(f"✗ Admin health check failed: {e}")
 
-    async def _test_admin_search(self):
-        """Test admin search tool."""
-        self.logger.info("Testing admin search...")
-        if not self.session:
-            self.logger.error("✗ No active session")
-            return
-            
-        try:
-            response = await self.session.call_tool(
-                "admin_search_for_documents",
-                {
-                    "query": self.test_query,
-                    "top_k": 5,
-                    "min_quality": 0,
-                    "include_scores": True
-                }
-            )
-            
-            if response.content:
-                content_text = self._extract_content_text(response.content)
-                if content_text:
-                    result = json.loads(content_text)
-                    self.logger.info(f"✓ Admin search: {result.get('status', 'unknown')} - {result.get('total_results', 0)} results")
-            
-        except Exception as e:
-            self.logger.error(f"✗ Admin search failed: {e}")
+
+
+
 
     def run_tests_http(self, server_name: str = "docs-server"):
         """Run all tests using HTTP transport."""
@@ -651,8 +595,6 @@ def main():
                        help="Transport protocol (default: http)")
     parser.add_argument("--server-path", type=str, default="python",
                        help="Path to Python interpreter for stdio mode (default: python)")
-    parser.add_argument("--test-private", action="store_true",
-                       help="Also test private server endpoints (requires OAuth)")
     parser.add_argument("--http-only", action="store_true",
                        help="Only test basic HTTP connectivity (no MCP protocol)")
     parser.add_argument("--verbose", "-v", action="store_true",

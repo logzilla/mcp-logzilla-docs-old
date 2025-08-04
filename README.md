@@ -22,9 +22,7 @@ The MCP Documentation Server is designed to integrate with MCP-compatible AI ass
 - **CORS Support**: Cross-origin resource sharing for web applications
 - **Health Checks**: Built-in health monitoring endpoints
 
-### Authentication & Security
-- **OAuth Integration**: Support for OAuth 2.0 token introspection
-- **API Key Authentication**: Simple bearer token authentication
+### Security
 - **Path Security**: Protection against directory traversal attacks
 - **File Size Limits**: Configurable maximum file sizes
 - **Read-Only Access**: Secure read-only file system access
@@ -246,9 +244,7 @@ export MCP_DESCRIPTION="company documentation"  # Server description
 export MCP_SSL_CERT_PATH="/path/to/cert.pem"    # SSL certificate file path
 export MCP_SSL_KEY_PATH="/path/to/key.pem"      # SSL private key file path
 
-# Authentication & Security
-export MCP_OAUTH_ENABLED="false"        # Enable OAuth authentication (default: false)
-export MCP_RUN_OAUTH_SERVER="false"     # Run standalone OAuth server (default: false)
+
 
 # Document Management - IMPORTANT: Point to your documentation directory
 export MCP_DOCS_PATH="/path/to/your/docs"  # Documentation root directory (default: ./docs)
@@ -417,8 +413,7 @@ Resource: docs://document/config/guide.md
 **Response Format:**
 Returns the raw markdown content of the specified document with proper formatting preserved.
 
-**OAuth Protected Resource (admin access):**
-- `admin://document/{document_id}` - Same functionality with administrative privileges
+
 
 ### MCP Tools
 
@@ -438,9 +433,9 @@ Search for documents using query text with metadata results only.
   "results": {
   "results": [
     {
-        "document_id": "auth/oauth.md",
-        "title": "OAuth Authentication", 
-        "path": "auth/oauth.md",
+        "document_id": "getting-started.md",
+        "title": "Getting Started Guide", 
+        "path": "getting-started.md",
         "score": 8.5,
         "modified": "2024-01-15T10:30:00",
         "size": 4096
@@ -467,13 +462,13 @@ Search for documents and retrieve their full content.
   "results": {
     "results": [
       {
-        "document_id": "auth/oauth.md",
-        "title": "OAuth Authentication",
-        "path": "auth/oauth.md", 
+        "document_id": "getting-started.md",
+        "title": "Getting Started Guide",
+        "path": "getting-started.md", 
         "score": 8.5,
   "modified": "2024-01-15T10:30:00",
         "size": 4096,
-        "content": "# OAuth Authentication\n\nThis document explains..."
+        "content": "# Getting Started\n\nThis guide explains..."
       }
     ]
   },
@@ -495,16 +490,11 @@ Check the health status of the documentation server.
   "search_engines_ready": true,
   "docs_directory": "./docs",
   "transport": "http",
-  "oauth_enabled": false
+
 }
 ```
 
-#### OAuth Protected Tools (admin access)
 
-When OAuth is enabled, additional administrative tools are available:
-
-- `admin_search_for_documents` - Same as `search_for_documents` with admin privileges
-- `admin_health_check` - Enhanced health check with additional server details
 
 ## 📁 Project Structure
 
@@ -547,7 +537,7 @@ docs-server/
 
 | Component | Purpose | Key Features |
 |-----------|---------|--------------|
-| **server.py** | Main FastMCP server | Multi-transport support, OAuth, SSL/TLS |
+| **server.py** | Main FastMCP server | Multi-transport support, SSL/TLS |
 | **search_tools.py** | Search orchestration | Hybrid search, result ranking, analytics |
 | **bm25_search.py** | Keyword search | TF-IDF, BM25 scoring, term matching |
 | **vector_search.py** | Semantic search | FAISS indexing, sentence transformers |
@@ -853,7 +843,6 @@ markdown_file → document_parser → chunks → {
 ## 🔒 Security Considerations
 
 ### Authentication & Authorization
-- **OAuth 2.0 Integration**: Full OAuth token introspection support
 - **Transport Security**: HTTPS with configurable SSL/TLS certificates
 
 ### File System Security
@@ -1093,9 +1082,6 @@ export MCP_DEVICE="cpu"                   # Force CPU-only mode
 ```bash
 # Test local connectivity
 curl -v http://localhost:8008/help
-
-# Test with authentication (if OAuth is enabled)
-curl -H "Authorization: Bearer your-oauth-token" http://localhost:8008/resources
 
 # Debug HTTPS issues
 openssl s_client -connect localhost:8443 -servername localhost
