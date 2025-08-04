@@ -1,458 +1,407 @@
 #!/usr/bin/env python3
 """
-MCP Documentation Server HTTP Mode Test
-======================================
+MCP HTTP Transport Test
+=======================
 
-Test the MCP server running in HTTP mode with comprehensive endpoint testing:
+Comprehensive tests for the MCP documentation server's HTTP transport:
 
-1. MCP HTTP Endpoints (per MCP specification):
-   - GET /.well-known/mcp/health → returns 200 if ready
-   - GET /v1/models → returns list of available models
-   - POST /v1/messages → accepts chat messages and returns completions
+1. HTTP endpoint validation (help page, server mount, MCP endpoint)
+2. Complete MCP functionality testing:
+   - Session initialization and tool listing
+   - health_check tool testing  
+   - search_for_documents tool testing
+   - search_and_retrieve_documents tool testing
+   - Resource reading using document IDs from search results
+   - Resource template listing
 
-2. FastMCP Client Integration:
-   - Tests the MCP protocol implementation using FastMCP client
-   - Tests tool listing and execution via MCP protocol
-
-This verifies both raw HTTP endpoint compliance and MCP protocol functionality.
+Based on the working pattern from simple-mcp-server examples.
+Fixes task lifecycle issues to prevent "Task was destroyed but it is pending" warnings.
 """
 
-print("🔧 Starting FastMCP HTTP mode test script...")
+import asyncio
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import List, Optional, Dict, Any
 
-try:
-    import asyncio
-    print("✅ asyncio imported")
-    import argparse
-    print("✅ argparse imported")
-    import tempfile
-    print("✅ tempfile imported")
-    import sys
-    print("✅ sys imported")
-    import time
-    print("✅ time imported")
-    import subprocess
-    print("✅ subprocess imported")
-    from pathlib import Path
-    print("✅ pathlib imported")
-    from fastmcp import Client
-    print("✅ FastMCP Client imported")
-    from typing import Any, Dict, List, Optional
-    print("✅ typing imported")
-    import httpx
-    print("✅ httpx imported (required for MCP HTTP endpoint testing)")
-except Exception as e:
-    print(f"❌ Import error: {e}")
-    sys.exit(1)
+import httpx
+
+# ────────────────────────────────────────────────────────────────────────────
+# Configuration
+# ────────────────────────────────────────────────────────────────────────────
+
+HOST = os.getenv("FASTMCP_TEST_HOST", "127.0.0.1")
+PORT = int(os.getenv("FASTMCP_TEST_PORT", "8008"))
+SERVER_NAME = os.getenv("FASTMCP_SERVER_NAME", "docs-server")
+
+HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parent
+SERVER_SCRIPT = REPO_ROOT / "server.py"
+DOCS_DIR = REPO_ROOT / "logzilla-docs"
+PY_EXE = sys.executable
+
+STARTUP_GRACE = 30  # seconds maximum to wait for the HTTP server to come up
+HTTP_TIMEOUT = 5.0  # seconds for individual HTTP requests
+CLIENT_TIMEOUT = 30  # seconds for MCP calls
+SEARCH_INIT_GRACE = 45  # seconds to wait for search engines to initialize
+
+# ────────────────────────────────────────────────────────────────────────────
+# Helper utilities
+# ────────────────────────────────────────────────────────────────────────────
+
+def _print_prefixed(prefix: str, line: str) -> None:
+    """Print server output with a prefix so it is distinguishable."""
+    sys.stdout.write(f"{prefix} | {line}\n")
+    sys.stdout.flush()
 
 
-class MCPHTTPServerTest:
-    """FastMCP-based test suite for the MCP Documentation Server in HTTP mode"""
-    
-    def __init__(self, docs_path: Optional[str] = None, use_temp_docs: bool = True, host: str = "127.0.0.1", port: int = 8000):
-        self.docs_path = docs_path
-        self.use_temp_docs = use_temp_docs
+async def _stream_process_output(proc: subprocess.Popen, prefix: str) -> None:
+    """Continuously stream a subprocess' combined stdout/stderr."""
+    if proc.stdout is None:
+        return
+    loop = asyncio.get_running_loop()
+    reader = asyncio.StreamReader()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    await loop.connect_read_pipe(lambda: protocol, proc.stdout)  # type: ignore[arg-type]
+    async for raw in reader:
+        _print_prefixed(prefix, raw.decode(errors="replace").rstrip())
+
+
+async def _wait_for_server_ready(host: str, port: int, timeout: float = STARTUP_GRACE) -> bool:
+    """Wait for the HTTP server to be ready by checking the /help endpoint."""
+    deadline = time.monotonic() + timeout
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        while time.monotonic() < deadline:
+            try:
+                # Check if the server's help page is available
+                resp = await client.get(f"http://{host}:{port}/help")
+                if resp.status_code == 200:
+                    print("✓ Server HTTP interface is ready")
+                    return True
+            except (httpx.RequestError, httpx.HTTPError):
+                pass
+            await asyncio.sleep(1)
+    return False
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Alternative test using MCP's streamablehttp_client
+# ────────────────────────────────────────────────────────────────────────────
+
+async def test_comprehensive_mcp_client(server_url: str) -> bool:
+    """Comprehensive test using MCP's streamablehttp_client."""
+    try:
+        from mcp.client.streamable_http import streamablehttp_client
+        from mcp import ClientSession
+        import json
+        
+        print(f"\n🔌 Testing with MCP streamablehttp_client at {server_url}")
+        
+        # Wait for search engines to be ready first
+        await asyncio.sleep(10)  # Give search engines time to initialize
+        
+        async with streamablehttp_client(server_url) as (
+            read_stream,
+            write_stream,
+            get_session_id,
+        ):
+            print("🎯 Initializing MCP session...")
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                print("✅ Session initialization complete!")
+                
+                if get_session_id:
+                    session_id = get_session_id()
+                    if session_id:
+                        print(f"Session ID: {session_id}")
+                
+                # List tools
+                tools = await session.list_tools()
+                print("\n🛠️  Available Tools")
+                tool_names = []
+                for tool in tools.tools:
+                    print(f"   • {tool.name}: {tool.description}")
+                    tool_names.append(tool.name)
+                
+                # Test 1: health_check tool
+                if "health_check" in tool_names:
+                    print("\n❤️‍🩹 Testing health_check tool...")
+                    result = await session.call_tool("health_check", {})
+                    if result.content:
+                        health_data = json.loads(result.content[0].text)
+                        print(f"   ✓ Server status: {health_data.get('status', 'unknown')}")
+                        print(f"   ✓ Documents loaded: {health_data.get('documents_loaded', 0)}")
+                        print(f"   ✓ Search tools available: {health_data.get('search_tools_available', False)}")
+                    else:
+                        print("   ✗ No health data returned")
+                        return False
+                
+                # Test 2: search_for_documents tool
+                document_id = None
+                if "search_for_documents" in tool_names:
+                    print("\n🔍 Testing search_for_documents tool...")
+                    result = await session.call_tool(
+                        "search_for_documents",
+                        {"query": "http syslogng", "top_k": 3, "include_scores": True}
+                    )
+                    if result.content:
+                        search_data = json.loads(result.content[0].text)
+                        if search_data.get("status") == "success":
+                            results = search_data.get("results", {}).get("results", [])
+                            print(f"   ✓ Found {len(results)} search results")
+                            if results:
+                                document_id = results[0]["document_id"]  # Store for resource test
+                                print(f"   ✓ Top result: {document_id} (score: {results[0]['score']:.2f})")
+                            else:
+                                print("   ✗ No search results returned")
+                                return False
+                        else:
+                            print(f"   ✗ Search failed: {search_data}")
+                            return False
+                    else:
+                        print("   ✗ No search data returned")
+                        return False
+                
+                # Test 3: search_and_retrieve_documents tool
+                if "search_and_retrieve_documents" in tool_names:
+                    print("\n📄 Testing search_and_retrieve_documents tool...")
+                    result = await session.call_tool(
+                        "search_and_retrieve_documents",
+                        {"query": "http syslogng", "top_k": 2}
+                    )
+                    if result.content:
+                        retrieve_data = json.loads(result.content[0].text)
+                        if retrieve_data.get("status") == "success":
+                            # The tool returns results with embedded content
+                            documents = retrieve_data.get("results", {}).get("results", [])
+                            print(f"   ✓ Retrieved {len(documents)} documents with content")
+                            if documents:
+                                doc = documents[0]
+                                if 'content' in doc and doc['content']:
+                                    print(f"   ✓ First document: {doc.get('document_id', 'unknown')} ({len(doc['content'])} chars)")
+                                else:
+                                    print("   ✗ First document is missing content")
+                                    return False
+                            else:
+                                print("   ✗ No documents retrieved")
+                                return False
+                        else:
+                            print(f"   ✗ Search and retrieve failed: {retrieve_data}")
+                            return False
+                    else:
+                        print("   ✗ No retrieve data returned")
+                        return False
+                
+                # Test 4: Resource reading using document ID from search
+                if document_id:
+                    print(f"\n📖 Testing resource reading for document: {document_id}")
+                    try:
+                        resource_uri = f"docs://document/{document_id}"
+                        result = await session.read_resource(resource_uri)
+                        if result.contents:
+                            content = result.contents[0]
+                            if hasattr(content, 'text') and content.text:
+                                print(f"   ✓ Retrieved document content ({len(content.text)} chars)")
+                                print(f"   ✓ Content preview: {content.text[:100]}...")
+                            else:
+                                print("   ✗ Resource content is empty")
+                                return False
+                        else:
+                            print("   ✗ No resource content returned")
+                            return False
+                    except Exception as e:
+                        print(f"   ✗ Resource reading failed: {e}")
+                        return False
+                else:
+                    print("\n📖 Skipping resource test (no document ID from search)")
+                
+                # Test 5: List resources
+                print("\n📚 Testing resource listing...")
+                try:
+                    resources = await session.list_resources()
+                    if resources.resources:
+                        print(f"   ✓ Found {len(resources.resources)} resource templates")
+                        for resource in resources.resources[:3]:  # Show first 3
+                            print(f"   • {resource.name}: {resource.description}")
+                    else:
+                        print("   ℹ No resource templates available")
+                except Exception as e:
+                    print(f"   ✗ Resource listing failed: {e}")
+                    return False
+                
+                print("\n✅ All MCP tests completed successfully!")
+                return True
+                
+    except Exception as e:
+        print(f"❌ MCP client test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Test runner class
+# ────────────────────────────────────────────────────────────────────────────
+
+class FastMCPHTTPTest:
+    """End-to-end tester for the HTTP transport."""
+
+    def __init__(self, host: str, port: int, server_name: str) -> None:
         self.host = host
         self.port = port
-        self.temp_docs_dir = None
-        self.client = None
-        self.server_process = None
-        self.server_script = Path(__file__).parent / "server.py"
+        self.server_name = server_name
+        # The actual MCP endpoint URL based on the sample pattern
+        self.mcp_url = f"http://{host}:{port}/{server_name}/mcp"
+        self.base_url = f"http://{host}:{port}"
+        self.server_proc: Optional[subprocess.Popen] = None
+        self.stream_task: Optional[asyncio.Task] = None
+
+    # ──────────────────────────────────────────────── lifecycle ────
+
+    async def start_server(self) -> None:
+        """Spawn the documentation server in HTTP mode."""
+        cmd = [
+            PY_EXE,
+            str(SERVER_SCRIPT),
+            "--transport",
+            "http",
+            "--host",
+            self.host,
+            "--port",
+            str(self.port),
+            "--docs",
+            str(DOCS_DIR),
+            "--name",
+            self.server_name,
+            "--device",
+            "none",  # disable vector engine for faster start-up
+        ]
+        env = os.environ.copy()
+        # Ensure PYTHONUNBUFFERED so we see output right away.
+        env["PYTHONUNBUFFERED"] = "1"
+
+        print(f"🚀 Launching server: {' '.join(cmd)}")
+        self.server_proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env,
+        )
+        assert self.server_proc.stdout is not None  # for mypy
+        self.stream_task = asyncio.create_task(_stream_process_output(self.server_proc, "SERVER"))
+
+        # Wait for HTTP server to be ready
+        ready = await _wait_for_server_ready(self.host, self.port)
+        if not ready:
+            raise RuntimeError("Server did not start HTTP interface in time")
         
-    def setup_docs(self):
-        """Setup documentation directory"""
-        if self.use_temp_docs:
-            self.temp_docs_dir = tempfile.mkdtemp(prefix="test_docs_http_")
-            test_file = Path(self.temp_docs_dir) / "test.md"
-            test_file.write_text("# HTTP Test Document\n\nThis is a test document for HTTP mode MCP testing.\n\n## Features\n\n- HTTP transport\n- FastMCP client\n- Search functionality\n- Document retrieval\n- Hybrid search")
-            self.docs_path = self.temp_docs_dir
-            print(f"📁 Created temp docs directory: {self.docs_path}")
-        else:
-            print(f"📁 Using existing docs directory: {self.docs_path}")
-    
-    async def start_http_server(self):
-        """Start the MCP server in HTTP mode"""
-        try:
-            cmd = [
-                sys.executable, str(self.server_script),
-                "--transport", "http",
-                "--host", self.host,
-                "--port", str(self.port),
-                "--docs", self.docs_path
+        print(f"✓ Server started")
+        print(f"  Base URL: {self.base_url}")
+        print(f"  MCP URL: {self.mcp_url}")
+
+    async def stop_server(self) -> None:
+        if self.server_proc and self.server_proc.poll() is None:
+            print("🛑 Terminating server process …")
+            self.server_proc.send_signal(signal.SIGINT)
+            try:
+                await asyncio.wait_for(asyncio.to_thread(self.server_proc.wait), timeout=10)
+            except asyncio.TimeoutError:
+                self.server_proc.kill()
+        
+        # Cancel the streaming task to avoid "Task was destroyed but it is pending" warnings
+        if self.stream_task and not self.stream_task.done():
+            self.stream_task.cancel()
+            try:
+                await self.stream_task
+            except asyncio.CancelledError:
+                pass  # Expected when cancelling
+        
+        print("✓ Server stopped.")
+
+    # ───────────────────────────────────────────────── tests ────
+
+    async def test_mcp_streamable_client(self) -> bool:
+        """Test using MCP's streamablehttp_client with comprehensive tool and resource testing."""
+        return await test_comprehensive_mcp_client(self.mcp_url)
+
+    async def test_http_endpoints(self) -> bool:
+        """Test that the expected HTTP endpoints exist."""
+        print("\n🌐 Testing HTTP endpoints …")
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+            endpoints = [
+                ("/help", "Help page", 200),
+                (f"/{self.server_name}", "Server mount point", [307, 200]),  # Redirect or OK
             ]
             
-            print(f"🚀 Starting HTTP server: {' '.join(cmd)}")
-            
-            self.server_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Combine stderr with stdout
-                text=True,
-                bufsize=1  # Line buffered
-            )
-            
-            print(f"📋 HTTP server process started with PID: {self.server_process.pid}")
-            
-            # Wait for server to start and be ready - we know from debug it takes ~8-10 seconds
-            print("⏳ Waiting for HTTP server to initialize...")
-            await asyncio.sleep(12)  # Give plenty of time for full initialization
-            
-            # Check if process died during startup
-            if self.server_process.poll() is not None:
-                stdout, _ = self.server_process.communicate()
-                print(f"❌ Server failed to start. Exit code: {self.server_process.poll()}")
-                print(f"📤 Server output: {stdout}")
-                return False
-            
-            # Test server responsiveness
-            print(f"🔍 Testing if HTTP server is responding on http://{self.host}:{self.port}")
-            try:
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(f"http://{self.host}:{self.port}/")
-                    print(f"✅ Server responded with status: {response.status_code}")
-            except Exception as e:
-                print(f"⚠️ Server health check failed: {e}")
-                # Continue anyway as this might be expected for MCP endpoints
-            
-            print(f"✅ HTTP server running on http://{self.host}:{self.port}")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Failed to start HTTP server: {e}")
-            return False
-    
-    def setup_http_client(self):
-        """Setup FastMCP HTTP client"""
-        # Connect to the correct FastMCP endpoint based on server implementation
-        server_name = "docs-server"  # Default server name matches server.py default
-        self.server_url = f"http://{self.host}:{self.port}/{server_name}/mcp"
-        
-        print(f"🔧 Setting up FastMCP HTTP client...")
-        self.client = Client(self.server_url)
-        print(f"✅ FastMCP HTTP client created for: {self.server_url}")
-    
-    def cleanup(self):
-        """Cleanup resources"""
-        # Stop the HTTP server
-        if self.server_process:
-            print("🛑 Stopping HTTP server...")
-            self.server_process.terminate()
-            try:
-                self.server_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                print("⚠️ Server didn't stop gracefully, forcing kill...")
-                self.server_process.kill()
-                self.server_process.wait()
-            print("✅ HTTP server stopped")
-        
-        # Clean up temp docs
-        if self.temp_docs_dir:
-            import shutil
-            shutil.rmtree(self.temp_docs_dir)
-            print("🗑️ Cleaned up temp docs directory")
-    
-    # Test Methods for HTTP connectivity and MCP protocol
-    async def test_http_health_check(self) -> bool:
-        """Test basic HTTP connectivity via /help endpoint"""
-        try:
-            print("🏥 Testing basic HTTP connectivity...")
-            async with httpx.AsyncClient() as http_client:
-                response = await http_client.get(f"http://{self.host}:{self.port}/help")
-                
-                if response.status_code == 200:
-                    print(f"✅ HTTP server is responding (status 200)")
-                    print(f"📋 Help page available at /help")
-                    return True
-                else:
-                    print(f"❌ HTTP server returned {response.status_code}")
-                    print(f"📋 Response: {response.text}")
-                    return False
+            all_ok = True
+            for endpoint, description, expected_codes in endpoints:
+                try:
+                    resp = await client.get(f"{self.base_url}{endpoint}")
+                    expected_list = expected_codes if isinstance(expected_codes, list) else [expected_codes]
+                    print(f"  • {description} ({endpoint}): {resp.status_code}")
+                    if resp.status_code not in expected_list:
+                        all_ok = False
+                except Exception as e:
+                    print(f"  • {description} ({endpoint}): Error - {e}")
+                    all_ok = False
                     
-        except Exception as e:
-            print(f"❌ HTTP connectivity test failed: {e}")
-            return False
+        return all_ok
 
-    async def test_ping(self) -> bool:
-        """Test server ping over HTTP using FastMCP client"""
+    async def run(self) -> bool:
         try:
-            if not self.client:
-                print("❌ FastMCP client not initialized")
-                return False
-                
-            print("📡 Testing FastMCP client ping...")
-            await self.client.ping()
-            print("✅ FastMCP Ping successful!")
-            return True
-        except Exception as e:
-            print(f"❌ FastMCP Ping failed: {e}")
-            return False
-    
-    async def test_list_tools(self) -> bool:
-        """Test listing available tools over HTTP using FastMCP client"""
-        try:
-            if not self.client:
-                print("❌ FastMCP client not initialized")
-                return False
-                
-            print("🔧 Testing FastMCP list_tools...")
-            tools = await self.client.list_tools()
-            print(f"✅ Found {len(tools)} tools via FastMCP: {[tool.name for tool in tools]}")
+            await self.start_server()
             
-            # Validate expected tools exist
-            expected_tools = ['search_for_documents', 'health_check']
-            found_tools = [tool.name for tool in tools]
-            for expected in expected_tools:
-                if expected not in found_tools:
-                    print(f"⚠️ Expected tool '{expected}' not found")
-                else:
-                    print(f"✅ Found expected tool '{expected}'")
+            # Give server a moment to fully initialize
+            await asyncio.sleep(2)
             
-            return len(tools) > 0
-        except Exception as e:
-            print(f"❌ FastMCP List tools failed: {e}")
-            return False
-    
-    async def test_health_check_tool(self) -> bool:
-        """Test the health_check tool via FastMCP client"""
-        try:
-            if not self.client:
-                print("❌ FastMCP client not initialized")
-                return False
-                
-            print("🏥 Testing health_check tool...")
-            result = await self.client.call_tool("health_check", {})
-            print(f"✅ Health check tool completed")
-            
-            # Try to parse the result if it's text content
-            if hasattr(result, 'content') and result.content:
-                content_text = str(result.content[0]) if result.content else ""
-                if content_text:
-                    print(f"📋 Health check response: {content_text[:200]}...")
-            
-            return True
-        except Exception as e:
-            print(f"❌ Health check tool failed: {e}")
-            return False
-    
-    async def run_all_tests(self) -> bool:
-        """Run all HTTP tests"""
-        print("🚀 Starting MCP HTTP server tests...")
-        
-        try:
-            # Setup
-            self.setup_docs()
-            
-            # Start HTTP server
-            if not await self.start_http_server():
-                return False
-            
-            # Setup HTTP client
-            self.setup_http_client()
-            
-            # First run basic HTTP connectivity test  
-            print(f"🔗 Testing basic HTTP connectivity on {self.host}:{self.port}")
-            
-            # Add debug info about the server process
-            if self.server_process:
-                print(f"📊 Server process status: {self.server_process.poll()}")
-            
-            # Define HTTP connectivity tests to run
-            http_tests = [
-                ("HTTP Health Check", self.test_http_health_check),
+            tests = [
+                ("http-endpoints", self.test_http_endpoints),
+                ("mcp-streamable", self.test_mcp_streamable_client),
             ]
             
             results = []
-            
-            # Run HTTP connectivity tests first
-            print("\n🌐 === TESTING HTTP CONNECTIVITY ===")
-            for test_name, test_func in http_tests:
-                print(f"\n📋 Running {test_name} test...")
+            for name, fn in tests:
                 try:
-                    result = await test_func()
-                    results.append((test_name, result))
-                    if result:
-                        print(f"✅ {test_name} test PASSED")
-                    else:
-                        print(f"❌ {test_name} test FAILED")
-                except Exception as e:
-                    print(f"❌ {test_name} test ERROR: {e}")
-                    results.append((test_name, False))
-                
-                # Small delay between tests
-                await asyncio.sleep(0.5)
-            
-            # Then try FastMCP client tests
-            print(f"\n🔌 === TESTING FASTMCP CLIENT INTEGRATION ===")
-            print(f"🔌 Attempting to connect FastMCP client to: {self.server_url}")
-            
-            try:
-                if not self.client:
-                    print("❌ FastMCP client not initialized")
-                    # Add failed FastMCP tests to results
-                    results.append(("FastMCP Ping", False))
-                    results.append(("FastMCP List Tools", False))
-                else:
-                    async with self.client:
-                        print("✅ FastMCP Client connected successfully!")
-                        
-                        # Define FastMCP client tests to run
-                        fastmcp_tests = [
-                            ("FastMCP Ping", self.test_ping),
-                            ("FastMCP List Tools", self.test_list_tools),
-                            ("FastMCP Health Check Tool", self.test_health_check_tool),
-                        ]
-                        
-                        # Run FastMCP tests
-                        for test_name, test_func in fastmcp_tests:
-                            print(f"\n📋 Running {test_name} test...")
-                            try:
-                                result = await test_func()
-                                results.append((test_name, result))
-                                if result:
-                                    print(f"✅ {test_name} test PASSED")
-                                else:
-                                    print(f"❌ {test_name} test FAILED")
-                            except Exception as e:
-                                print(f"❌ {test_name} test ERROR: {e}")
-                                results.append((test_name, False))
-                            
-                            # Small delay between tests
-                            await asyncio.sleep(0.5)
-                        
-            except Exception as connection_error:
-                print(f"⚠️ FastMCP Client connection failed: {connection_error}")
-                print(f"📊 Server process status: {self.server_process.poll() if self.server_process else 'None'}")
-                print("💡 This may be expected if the server doesn't implement FastMCP endpoints")
-                
-                # Add failed FastMCP tests to results
-                results.append(("FastMCP Ping", False))
-                results.append(("FastMCP List Tools", False))
-                results.append(("FastMCP Health Check Tool", False))
+                    passed = await fn()
+                except Exception as exc:
+                    print(f"💥 {name} raised: {exc}")
+                    import traceback
+                    traceback.print_exc()
+                    passed = False
+                results.append((name, passed))
             
             # Summary
-            print("\n" + "=" * 60)
-            print("📊 HTTP TEST RESULTS SUMMARY")
-            print("=" * 60)
+            passed_count = sum(p for _, p in results)
+            print("\n📊 SUMMARY")
+            for name, p in results:
+                print(f"  {'✓' if p else '✗'} {name}")
+            print(f"━ {passed_count}/{len(results)} tests passed.")
             
-            passed = sum(1 for _, result in results if result)
-            total = len(results)
+            return passed_count == len(tests)  # Pass if all tests succeed
             
-            # Group results by category
-            http_results = [(name, result) for name, result in results if "HTTP" in name]
-            fastmcp_results = [(name, result) for name, result in results if name.startswith("FastMCP")]
-            
-            print("\n🌐 HTTP Connectivity:")
-            for test_name, result in http_results:
-                status = "✅ PASS" if result else "❌ FAIL"
-                print(f"  {status} - {test_name}")
-            
-            print("\n🔌 FastMCP Client Integration:")
-            for test_name, result in fastmcp_results:
-                status = "✅ PASS" if result else "❌ FAIL"
-                print(f"  {status} - {test_name}")
-            
-            print(f"\n🎯 Overall: {passed}/{total} tests passed")
-            
-            # Consider success if HTTP connectivity and at least basic FastMCP tests pass
-            http_passed = sum(1 for _, result in http_results if result)
-            http_total = len(http_results)
-            fastmcp_passed = sum(1 for _, result in fastmcp_results if result)
-            fastmcp_total = len(fastmcp_results)
-            
-            if http_passed == http_total and fastmcp_passed >= 2:  # At least ping and list_tools
-                print("🎉 ALL CORE TESTS PASSED! Server is working correctly with FastMCP over HTTP!")
-                if passed == total:
-                    print("🚀 BONUS: All tests including advanced features working!")
-                return True
-            elif http_passed == http_total:
-                print("✅ HTTP connectivity working, but FastMCP integration has issues.")
-                print("💡 Server is responding but MCP protocol may need debugging.")
-                return False
-            else:
-                print(f"⚠️ {http_total - http_passed} HTTP connectivity tests failed. Please check the server.")
-                return False
-        
-        except Exception as e:
-            print(f"❌ HTTP Test execution failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-        
         finally:
-            self.cleanup()
+            await self.stop_server()
 
 
-async def main():
-    """Main test runner"""
-    print("📋 Entering HTTP test main() function")
-    
+# ────────────────────────────────────────────────────────────────────────────
+# Entrypoint
+# ────────────────────────────────────────────────────────────────────────────
+
+async def _main() -> int:
+    tester = FastMCPHTTPTest(HOST, PORT, SERVER_NAME)
     try:
-        # Parse command line arguments
-        print("🔧 Creating argument parser")
-        parser = argparse.ArgumentParser(description="Test MCP Documentation Server HTTP mode using FastMCP Client")
-        parser.add_argument(
-            "--docs-path", 
-            type=str, 
-            help="Path to documentation directory"
-        )
-        parser.add_argument(
-            "--use-temp-docs", 
-            action="store_true", 
-            help="Create temporary test documents instead of using existing docs"
-        )
-        parser.add_argument(
-            "--host",
-            type=str,
-            default="127.0.0.1",
-            help="HTTP server host (default: 127.0.0.1)"
-        )
-        parser.add_argument(
-            "--port",
-            type=int,
-            default=8000,
-            help="HTTP server port (default: 8000)"
-        )
-        
-        print("🔧 Parsing arguments")
-        args = parser.parse_args()
-        print(f"✅ Arguments parsed: use_temp_docs={args.use_temp_docs}, docs_path={args.docs_path}, host={args.host}, port={args.port}")
-    except Exception as e:
-        print(f"❌ Error in argument parsing: {e}")
+        all_ok = await tester.run()
+        return 0 if all_ok else 1
+    except Exception as exc:
+        print(f"🛑 Test runner failed: {exc}")
         import traceback
         traceback.print_exc()
         return 1
-    
-    # Determine configuration
-    if args.use_temp_docs:
-        test_runner = MCPHTTPServerTest(use_temp_docs=True, host=args.host, port=args.port)
-    elif args.docs_path:
-        test_runner = MCPHTTPServerTest(docs_path=args.docs_path, use_temp_docs=False, host=args.host, port=args.port)
-    else:
-        # Use default docs path or temp docs
-        default_docs = Path(__file__).parent / "../../../lz/ui/app/docs"
-        if default_docs.exists():
-            test_runner = MCPHTTPServerTest(docs_path=str(default_docs.resolve()), use_temp_docs=False, host=args.host, port=args.port)
-            print(f"📁 Using default docs directory: {default_docs.resolve()}")
-        else:
-            print(f"⚠️ Default docs directory not found: {default_docs.resolve()}")
-            print("📁 Falling back to temporary test documents")
-            test_runner = MCPHTTPServerTest(use_temp_docs=True, host=args.host, port=args.port)
-    
-    success = await test_runner.run_all_tests()
-    return 0 if success else 1
 
 
 if __name__ == "__main__":
-    print("🎯 Entering HTTP test main execution block")
-    try:
-        print("🚀 About to call asyncio.run(main())")
-        exit_code = asyncio.run(main())
-        print(f"✅ HTTP test asyncio.run completed with exit code: {exit_code}")
-        sys.exit(exit_code)
-    except KeyboardInterrupt:
-        print("\n⏹️ HTTP tests interrupted by user")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n💥 HTTP test runner failed: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    sys.exit(asyncio.run(_main()))

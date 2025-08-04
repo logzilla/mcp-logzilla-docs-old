@@ -6,16 +6,6 @@ A sophisticated Model Context Protocol (MCP) server implementation providing int
 
 The MCP Documentation Server is designed to integrate with MCP-compatible AI assistants and applications, providing them with powerful access to your documentation through natural language queries. It serves as a bridge between AI models and your documentation repositories, enabling context-aware assistance and knowledge retrieval.
 
-### Key Capabilities
-
-- **🔍 Hybrid Search Engine**: Advanced search combining BM25 keyword matching with semantic vector search via FAISS
-- **📚 Document Management**: Intelligent indexing and serving of markdown documentation
-- **🌐 Multiple Transport Modes**: Support for stdio, HTTP, and HTTPS with streaming capabilities
-- **🔐 Enterprise Security**: OAuth authentication, SSL/TLS encryption, and configurable access controls
-- **🐳 Container Ready**: Full Docker support with pre-built images and compose files
-- **⚡ High Performance**: Async/await architecture with document caching and optimized I/O
-- **🔧 Flexible Configuration**: Environment-based configuration with sensible defaults
-
 ## ✨ Features
 
 ### Search & Retrieval
@@ -46,6 +36,13 @@ The MCP Documentation Server is designed to integrate with MCP-compatible AI ass
 - **Environment Configuration**: Flexible `.env` file and environment variable support
 - **Development Tools**: Hot reload, debugging support, and development certificates
 
+## 📋 Prerequisites
+
+- **Python**: 3.11 or higher
+- **System Requirements**: 2GB RAM minimum (4GB recommended for large document sets)
+- **Dependencies**: See `requirements.txt` for complete list
+- **Optional**: Docker and Docker Compose for containerized deployment
+
 ## 🚀 Quick Start
 
 ### Option 1: Direct Python Installation
@@ -57,13 +54,7 @@ cd model-context-protocol/docs-server
 # Install dependencies
 pip install -r requirements.txt
 
-# Copy and customize environment configuration (optional)
-cp .env.example .env
-
 # Start the server (HTTP mode on port 8000)  
-python server.py --transport http --port 8000
-
-# Point to your documentation directory
 python server.py --transport http --port 8000 --docs /path/to/your/docs
 
 # Or start in MCP stdio mode (for direct integration)
@@ -72,50 +63,21 @@ python server.py --transport stdio --docs /path/to/your/docs
 
 ### Option 2: Docker (Recommended for Production)
 
-#### Using Docker Compose (Recommended)
-
 ```bash
-# 1. Navigate to the docker directory
+# Navigate to the docker directory
 cd model-context-protocol/docs-server/docker
 
-# 2. Edit docker-compose.yml to point to YOUR documentation directory
-# Change this line in docker-compose.yml:
-#   - ../docs:/app/docs:ro
-# To point to your actual docs directory:
-#   - /path/to/your/documentation:/app/docs:ro
+# Edit compose.yml to point to YOUR documentation directory
+# Change: - ../docs:/app/docs:ro
+# To: - /path/to/your/documentation:/app/docs:ro
 
-# 3. Start the server
+# Start the server
 docker-compose up -d
 
 # The server will be available at http://localhost:8000
 ```
 
-#### Using Docker Run Command
-
-```bash
-# Build the image
-cd model-context-protocol/docs-server
-docker build -f docker/Dockerfile -t mcp-docs-server .
-
-# Run with your documentation directory mounted
-docker run -d \
-  --name mcp-docs-server \
-  -p 8000:8000 \
-  -v /path/to/your/documentation:/app/docs:ro \
-  -e MCP_TRANSPORT=http \
-  -e MCP_HOST=0.0.0.0 \
-  -e MCP_PORT=8000 \
-  mcp-docs-server
-
-# Example with a real path:
-# docker run -d \
-#   --name mcp-docs-server \
-#   -p 8000:8000 \
-#   -v /home/user/my-docs:/app/docs:ro \
-#   mcp-docs-server
-```
-
-#### Documentation Directory Requirements
+### Documentation Directory Requirements
 
 Your documentation directory should contain:
 - Markdown files (`.md`) 
@@ -134,28 +96,96 @@ Example structure:
 └── troubleshooting.md
 ```
 
-### Option 3: HTTPS Production Setup
+## MCP Client Configuration
 
-```bash
-# Generate SSL certificates (self-signed for development)
-openssl genrsa -out server.key 2048
-openssl req -new -x509 -key server.key -out server.crt -days 365
+### Windsurf
 
-# Configure environment
-export MCP_SSL_CERT_PATH="server.crt"
-export MCP_SSL_KEY_PATH="server.key"
-export MCP_PORT="8443"
+In Windsurf, go to "Advanced Settings", then "Cascade", then "Manage 
+MCP Servers", then "View raw config". Add the following information
+(merge with "mcpServers" if you already have some).
 
-# Start with HTTPS  
-python server.py --transport https --port 8443
+```
+{
+    "mcpServers": {
+      "lzdocs": {
+        "serverUrl": "http://127.0.0.1:8008/logzilla-docs-server/mcp",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      }
+    }
+  }
 ```
 
-## 📋 Prerequisites
+Close the raw JSON tab and go back to the Manage MCPs tab. Click
+"refresh" and you should see the `lzdocs` MCP server listed.
 
-- **Python**: 3.11 or higher
-- **System Requirements**: 2GB RAM minimum (4GB recommended for large document sets)
-- **Dependencies**: See `requirements.txt` for complete list
-- **Optional**: Docker and Docker Compose for containerized deployment
+### Claude desktop
+
+You must have `npx` on your system, in your PATH. 
+
+1. **Check Node/NPM are installed**
+   `node -v`  `npm -v`
+   *Why it matters*: **npx** ships with npm ≥ 5.2, which is bundled with every
+   modern Node installer (so if those commands work, you already have npx).
+
+2. **Install (or upgrade) Node** if the commands above fail or show an ancient
+   version.
+
+   * Download and run the LTS installer from [https://nodejs.org](https://nodejs.org) **or**
+   * `winget install OpenJS.NodeJS.LTS`  # Windows 10/11
+     *Why it matters*: This gives you the latest stable Node, npm, and npx in one
+     shot.
+
+3. **Open a shell** where you want to work.
+
+   * Windows Terminal, PowerShell, or plain **cmd.exe**
+   * (Optional) VS Code’s integrated terminal or Git Bash also work fine
+     *Why it matters*: npx is just a CLI utility, so any terminal that can see the
+     `node` executables on your `PATH` will do.
+
+4. **Run the program with npx**
+   `npx <package-name> [args]`
+   Example: `npx create-react-app my-app`
+   *Why it matters*: npx downloads the package (if you don’t already have it) to
+   a temp cache, then immediately runs its CLI entry-point.
+
+5. **Skip the “install? (y/N)” prompt** (npm ≥ 7)
+   `npx -y <package-name>`
+   *Why it matters*: Great for scripts or CI where you don’t want interactivity.
+
+6. **Troubleshoot common issues**
+
+   * *“‘npx’ is not recognized”*: the Node installer’s **postinstall** step
+     didn’t add `%ProgramFiles%\nodejs\` to `PATH`. Log out/in or add it
+     manually.
+   * *Corporate proxy*:
+     `npm config set proxy http://user:pass@proxy:port`
+     `npm config set https-proxy http://user:pass@proxy:port`
+   * *Firewall blocks downloads*: pre-install the CLI globally:
+     `npm i -g <package-name>` and run it normally.
+     *Why it matters*: These fixes get you past the usual Windows-specific
+     roadblocks.
+
+
+Once you have Node/NPM installed, in a text editor, open the file 
+`C:\Users\your-user-name\AppData\Roaming\Claude\claude_desktop_config.json`.
+
+Either add the following, or merge the "mcpServers" section:
+```
+{
+    "mcpServers": {
+        "logzilla-docs": {
+            "args": [
+                "mcp-remote",
+                "http://127.0.0.1:8008/logzilla-docs-server/mcp"
+            ],
+            "command": "npx"
+        }
+    }
+}
+```
+
 
 ## 🔧 Installation
 
@@ -234,25 +264,14 @@ export MCP_DESCRIPTION="company documentation"  # Server description
 # SSL/TLS Configuration (HTTPS mode)
 export MCP_SSL_CERT_PATH="/path/to/cert.pem"    # SSL certificate file path
 export MCP_SSL_KEY_PATH="/path/to/key.pem"      # SSL private key file path
-```
 
-#### Authentication & Security
-```bash
-# OAuth Configuration
+# Authentication & Security
 export MCP_OAUTH_ENABLED="false"        # Enable OAuth authentication (default: false)
 export MCP_RUN_OAUTH_SERVER="false"     # Run standalone OAuth server (default: false)
-```
 
-#### Document Management
-```bash
-# Document Storage - IMPORTANT: Point to your documentation directory
+# Document Management - IMPORTANT: Point to your documentation directory
 export MCP_DOCS_PATH="/path/to/your/docs"  # Documentation root directory (default: ./docs)
-# Examples:
-# export MCP_DOCS_PATH="/home/user/project-docs"
-# export MCP_DOCS_PATH="/var/www/documentation"
-# export MCP_DOCS_PATH="./my-company-docs"
-
-export MCP_MAX_FILE_SIZE="10485760"     # Maximum file size (10MB) - configured in ServerSettings
+export MCP_MAX_FILE_SIZE="10485760"     # Maximum file size (10MB)
 export MCP_DEVICE="auto"                # Compute device: cpu, cuda, mps, auto, none (default: auto)
 ```
 
@@ -265,7 +284,6 @@ Create a `.env` file in the project root:
 MCP_TRANSPORT=http
 MCP_HOST=localhost
 MCP_PORT=8000
-# IMPORTANT: Point to YOUR documentation directory
 MCP_DOCS_PATH=/path/to/your/documentation
 MCP_DEVICE=auto
 MCP_SERVER_NAME=docs-server
@@ -277,30 +295,25 @@ MCP_DESCRIPTION="company documentation"
 # MCP_DOCS_PATH=./company-documentation
 ```
 
-### Command Line Arguments
-
-Override configuration with command-line arguments:
+### SSL/HTTPS Setup
 
 ```bash
-# Basic usage with your documentation directory
-python server.py --transport http --port 8000 --docs /path/to/your/docs
+# Generate SSL certificates (self-signed for development)
+openssl genrsa -out server.key 2048
+openssl req -new -x509 -key server.key -out server.crt -days 365
 
-# All available options
-python server.py \
-  --docs /path/to/your/documentation \
-  --transport https \
-  --host localhost \
-  --port 8443 \
-  --name "production-docs-server" \
-  --description "Production Documentation Server" \
-  --device auto \
-  --ssl-cert /path/to/cert.pem \
-  --ssl-key /path/to/key.pem
+# Configure environment
+export MCP_SSL_CERT_PATH="server.crt"
+export MCP_SSL_KEY_PATH="server.key"
+export MCP_PORT="8443"
+
+# Start with HTTPS  
+python server.py --transport https --port 8443
 ```
 
 ### Docker Configuration
 
-For Docker deployments, modify `docker-compose.yml` to mount your documentation directory:
+For Docker deployments, modify `compose.yml`:
 
 ```yaml
 version: '3.8'
@@ -316,7 +329,6 @@ services:
       # IMPORTANT: Mount YOUR documentation directory here
       - /path/to/your/documentation:/app/docs:ro
       # Example: - /home/user/project-docs:/app/docs:ro
-      # Example: - /var/www/documentation:/app/docs:ro
     environment:
       - MCP_TRANSPORT=http
       - MCP_HOST=0.0.0.0
@@ -334,6 +346,25 @@ services:
 ## 📖 Usage
 
 ### Starting the Server
+
+#### Command Line Arguments
+
+```bash
+# Basic usage with your documentation directory
+python server.py --transport http --port 8000 --docs /path/to/your/docs
+
+# All available options
+python server.py \
+  --docs /path/to/your/documentation \
+  --transport https \
+  --host localhost \
+  --port 8443 \
+  --name "production-docs-server" \
+  --description "Production Documentation Server" \
+  --device auto \
+  --ssl-cert /path/to/cert.pem \
+  --ssl-key /path/to/key.pem
+```
 
 #### Development Mode
 ```bash
@@ -358,7 +389,7 @@ MCP_SSL_KEY_PATH="/etc/ssl/private/server.key" \
 python server.py --transport https --port 8443
 
 # Docker production deployment
-docker-compose -f docker/docker-compose.yml up -d
+docker-compose -f docker/compose.yml up -d
 ```
 
 ### Integration with MCP Clients
@@ -383,7 +414,7 @@ Add to your Claude Desktop configuration:
 #### Direct HTTP Integration
 ```bash
 # Test server availability
-curl http://localhost:8000/health
+curl http://localhost:8000/help
 
 # List available tools
 curl http://localhost:8000/tools/list
@@ -395,8 +426,6 @@ curl http://localhost:8000/resources
 ## 🔧 API Reference
 
 ### MCP Resources
-
-The server provides document content access through the Model Context Protocol:
 
 #### `docs://document/{document_id}`
 Retrieves the full content of a specific document by its relative path.
@@ -418,8 +447,6 @@ Returns the raw markdown content of the specified document with proper formattin
 - `admin://document/{document_id}` - Same functionality with administrative privileges
 
 ### MCP Tools
-
-The server provides the following tools for document search and management:
 
 #### `search_for_documents`
 Search for documents using query text with metadata results only.
@@ -532,7 +559,7 @@ docs-server/
 ├── Docker Environment/
 │   ├── docker/
 │   │   ├── Dockerfile          # Multi-stage container build
-│   │   ├── docker-compose.yml  # Production deployment config
+│   │   ├── compose.yml         # Production deployment config
 │   │   ├── download_models.py  # Pre-download embedding models
 │   │   ├── .dockerignore       # Docker build exclusions
 │   │   └── logs/              # Container log directory
@@ -559,21 +586,29 @@ The project includes a comprehensive test suite covering all major functionality
 
 ### Running Tests
 
+**Important**: All tests must be run from the main project directory so Python can find the library modules.
+
 ```bash
 # Install test dependencies
 pip install pytest pytest-asyncio httpx
 
-# Run all tests
+# Run all tests (from main directory)
 pytest
 
 # Run with coverage
 pytest --cov=. --cov-report=html
 
-# Run specific test categories
-pytest test_search_routines.py -v      # Search functionality
-pytest test_mcp_responses.py -v        # MCP protocol compliance
-pytest test_http.py -v                 # HTTP endpoints
-pytest test_stdio.py -v                # stdio transport
+# Run specific test categories (from main directory)
+python tests/test_search_routines.py   # Search functionality
+python tests/test_mcp_responses.py     # MCP protocol compliance
+python tests/test_http.py              # HTTP endpoints
+python tests/test_stdio.py             # stdio transport
+
+# Or use pytest with full paths
+pytest tests/test_search_routines.py -v
+pytest tests/test_mcp_responses.py -v
+pytest tests/test_http.py -v
+pytest tests/test_stdio.py -v
 ```
 
 ### Test Categories
@@ -598,7 +633,7 @@ pytest test_stdio.py -v                # stdio transport
 #### HTTP Endpoints
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:8000/help
 
 # List tools
 curl http://localhost:8000/tools/list
@@ -621,7 +656,7 @@ curl -H "Authorization: Bearer your-api-key" \
 
 #### MCP Integration Testing
 ```bash
-# Test stdio transport directly
+# Test stdio transport directly (from main directory)
 echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | python server.py --transport stdio
 
 # Test with MCP client library
@@ -667,20 +702,6 @@ pip install pytest pytest-asyncio pytest-cov black flake8 mypy
 # Setup pre-commit hooks (optional)
 pip install pre-commit
 pre-commit install
-```
-
-### SSL Certificates for Development
-
-```bash
-# Generate self-signed certificates for HTTPS testing
-openssl genrsa -out server.key 2048
-openssl req -new -x509 -key server.key -out server.crt -days 365 \
-  -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=localhost"
-
-# Configure for development
-export MCP_SSL_CERT="server.crt"
-export MCP_SSL_KEY="server.key"
-export MCP_HTTPS="true"
 ```
 
 ### Development Workflow
@@ -734,19 +755,19 @@ python server.py --transport http --port 8000 --device auto
 
 #### Common Debugging Scenarios
 ```bash
-# Debug search issues
+# Debug search issues (from main directory)
 python -c "
 from search_tools import SearchTools
 from models import SearchRequest
-tools = SearchTools('./docs')
+tools = SearchTools('./logzilla-docs')
 result = tools.search_documents(SearchRequest(query='test', max_results=5))
 print(result)
 "
 
-# Debug document indexing
+# Debug document indexing (from main directory)
 python -c "
 from document_cache import DocumentCache
-cache = DocumentCache('./docs')
+cache = DocumentCache('./logzilla-docs')
 docs = cache.list_documents()
 print(f'Found {len(docs)} documents')
 "
@@ -854,23 +875,12 @@ markdown_file → document_parser → chunks → {
 }
 ```
 
-### Performance Characteristics
-
-| Component | Throughput | Latency | Memory Usage |
-|-----------|------------|---------|--------------|
-| **BM25 Search** | 1000+ queries/sec | <10ms | 50MB per 1000 docs |
-| **Vector Search** | 500+ queries/sec | 15-30ms | 200MB per 1000 docs |
-| **Document Cache** | 5000+ reads/sec | <2ms | 10MB per 1000 docs |
-| **HTTP Transport** | 100+ concurrent | 5-50ms | 20MB base |
-| **MCP stdio** | Single client | <5ms | 15MB base |
 
 ## 🔒 Security Considerations
 
 ### Authentication & Authorization
 - **OAuth 2.0 Integration**: Full OAuth token introspection support
-- **API Key Authentication**: Simple bearer token authentication
 - **Transport Security**: HTTPS with configurable SSL/TLS certificates
-- **Access Control**: Configurable API endpoints and resource access
 
 ### File System Security
 - **Sandboxed Access**: Only serves files from configured documentation directory
@@ -915,10 +925,10 @@ export MCP_DEVICE="cpu"                  # Use CPU only to reduce memory usage
 
 ### Docker Production Setup
 
-Create a production `docker-compose.prod.yml` file:
+Create a production `compose.prod.yml` file:
 
 ```yaml
-# docker-compose.prod.yml
+# compose.prod.yml
 version: '3.8'
 services:
   docs-server:
@@ -945,13 +955,13 @@ services:
       - MCP_SSL_KEY_PATH=/app/certs/server.key
       - MCP_DOCS_PATH=/app/docs
     healthcheck:
-      test: ["CMD", "curl", "-f", "-k", "https://localhost:8443/health"]
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8443/help"]
       interval: 30s
       timeout: 10s
       retries: 3
 
 # Deploy with:
-# docker-compose -f docker-compose.prod.yml up -d
+# docker-compose -f compose.prod.yml up -d
 ```
 
 **Production Documentation Setup:**
@@ -1026,14 +1036,13 @@ WantedBy=multi-user.target
 
 ### Health Monitoring
 ```bash
-# Health check endpoint
-curl https://localhost:8443/health
+# Server status via help page
+curl https://localhost:8443/help
 
-# Detailed status endpoint  
-curl https://localhost:8443/status
-
-# Search performance metrics
-curl https://localhost:8443/metrics
+# Health check via MCP tool (requires MCP client)
+curl -X POST http://localhost:8000/tools/call \
+  -H "Content-Type: application/json" \
+  -d '{"name": "health_check", "arguments": {}}'
 ```
 
 ### Logging Configuration
@@ -1087,10 +1096,10 @@ python server.py --transport http --port 8000 --device cpu
 #### 3. Document Indexing Problems
 ```bash
 # Symptoms: Documents not found, indexing errors
-# Debug steps:
+# Debug steps (run from main directory):
 python -c "
 from document_cache import DocumentCache
-cache = DocumentCache('./docs')
+cache = DocumentCache('./logzilla-docs')
 print(f'Found documents: {len(cache.list_documents())}')
 for doc in cache.list_documents()[:5]:
     print(f'  {doc.path} - {doc.size} bytes')
@@ -1110,7 +1119,7 @@ export MCP_DEVICE="cpu"                   # Force CPU-only mode
 #### 5. Network and Connectivity
 ```bash
 # Test local connectivity
-curl -v http://localhost:8000/health
+curl -v http://localhost:8000/help
 
 # Test with authentication (if OAuth is enabled)
 curl -H "Authorization: Bearer your-oauth-token" http://localhost:8000/resources
@@ -1161,4 +1170,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - **Sentence Transformers**: For state-of-the-art text embeddings
 - **FastAPI**: For the robust async web framework
 - **Pydantic**: For data validation and serialization
-

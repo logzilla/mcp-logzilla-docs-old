@@ -645,6 +645,8 @@ def main():
                        help="Server host address (default: localhost)")
     parser.add_argument("-p", "--port", type=int, default=8000,
                        help="Server port number (default: 8000)")
+    parser.add_argument("-n", "--name", type=str, default="docs-server",
+                          help="MCP server name (default: docs-server)")
     parser.add_argument("--transport", choices=["http", "https", "stdio"], default="http",
                        help="Transport protocol (default: http)")
     parser.add_argument("--server-path", type=str, default="python",
@@ -655,8 +657,6 @@ def main():
                        help="Only test basic HTTP connectivity (no MCP protocol)")
     parser.add_argument("--verbose", "-v", action="store_true",
                        help="Enable verbose logging")
-    parser.add_argument("-n", "--name", type=str, default="docs-server",
-                       help="MCP server name (default: docs-server)")
     
     args = parser.parse_args()
     
@@ -687,11 +687,6 @@ def main():
             # Test HTTP/HTTPS transport
             print(f"Testing {args.transport.upper()} transport...")
             success = client.run_tests_http(args.name)
-            
-            # Test private server if requested
-            if args.test_private and success:
-                print("\nTesting private server...")
-                asyncio.run(client.test_private_server())
     
     except KeyboardInterrupt:
         print("\nTests interrupted by user")

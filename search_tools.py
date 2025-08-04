@@ -61,7 +61,7 @@ class SearchTools:
             chunk_overlap=50
         )
         
-        if device != None:
+        if device != None and device != "none":
             self.vector_engine = VectorSearchEngine(
                 document_cache=document_cache,
                 provider=self.default_provider,
@@ -408,7 +408,7 @@ if __name__ == "__main__":
         
         await tools.initialize(on_search_tools_ready)
         
-        print("Note: Index is automatically built during HybridSearchTools initialization")
+        print("Note: Index is automatically built during SearchTools initialization")
         
         # Perform searches
         queries = [

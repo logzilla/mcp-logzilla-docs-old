@@ -67,7 +67,7 @@ TEST_CONFIG = {
 }
 
 # Use real LogZilla docs directory
-DOCS_DIRECTORY = "../../../lz/ui/app/docs"
+DOCS_DIRECTORY = "../logzilla-docs"
 
 # Comment out artificial document creation for now
 # SAMPLE_DOCUMENTS = [...]
@@ -531,7 +531,7 @@ async def test_individual_search_components(tools, query: str) -> bool:
                 print(f"      Text: {text_content[:100]}...")
                 
                 # Check if this is our target file
-                if "13_Syslog-ng_HTTP_Receiver.md" in result.document_id:
+                if "13_Syslogng_HTTP_Receiver.md" in result.document_id:
                     print(f"      🎯 TARGET FILE FOUND in BM25 results!")
                         
         except Exception as e:
@@ -550,7 +550,7 @@ async def test_individual_search_components(tools, query: str) -> bool:
                 print(f"      Text: {text_content[:100]}...")
                 
                 # Check if this is our target file
-                if "13_Syslog-ng_HTTP_Receiver.md" in result.document_id:
+                if "13_Syslogng_HTTP_Receiver.md" in result.document_id:
                     print(f"      🎯 TARGET FILE FOUND in Vector results!")
                         
         except Exception as e:
@@ -581,7 +581,7 @@ async def test_individual_search_components(tools, query: str) -> bool:
                 print(f"      Source: {res.get('source', 'unknown')}")
                 
                 # Check if this is our target file
-                if "13_Syslog-ng_HTTP_Receiver.md" in document_id:
+                if "13_Syslogng_HTTP_Receiver.md" in document_id:
                     print(f"      🎯 TARGET FILE FOUND in Hybrid results!")
                     
         except Exception as e:
@@ -589,11 +589,11 @@ async def test_individual_search_components(tools, query: str) -> bool:
             return False
             
         # Check if target file was found in any of the search results
-        target_found_bm25 = any("13_Syslog-ng_HTTP_Receiver.md" in str(result.document_id) for result in bm25_results) if 'bm25_results' in locals() else False
-        target_found_vector = any("13_Syslog-ng_HTTP_Receiver.md" in str(result.document_id) for result in vector_results) if 'vector_results' in locals() else False
+        target_found_bm25 = any("13_Syslogng_HTTP_Receiver.md" in str(result.document_id) for result in bm25_results) if 'bm25_results' in locals() else False
+        target_found_vector = any("13_Syslogng_HTTP_Receiver.md" in str(result.document_id) for result in vector_results) if 'vector_results' in locals() else False
         
         if not target_found_bm25 and not target_found_vector:
-            print(f"\n⚠️ WARNING: Target file '13_Syslog-ng_HTTP_Receiver.md' not found in individual search results")
+            print(f"\n⚠️ WARNING: Target file '13_Syslogng_HTTP_Receiver.md' not found in individual search results")
             return False
             
         print(f"\n✅ Individual search component tests completed successfully")
@@ -613,7 +613,7 @@ async def test_hybrid_interleaving(tools):
     
     # Test query that should show interleaving behavior
     test_query = "http syslogng"
-    target_file = "13_Syslog-ng_HTTP_Receiver.md"
+    target_file = "13_Syslogng_HTTP_Receiver.md"
     
     print(f"\n🔍 Testing query: '{test_query}'")
     print(f"🎯 Target file: {target_file}")
@@ -761,7 +761,7 @@ async def test_syslog_dash_matching(tools):
     
     # Test query with hyphenated term - should be exact match for BM25
     test_query = "http syslog-ng"
-    target_file = "13_Syslog-ng_HTTP_Receiver.md"
+    target_file = "13_Syslogng_HTTP_Receiver.md"
     
     print(f"\n Testing query: '{test_query}' (with dash)")
     print(f" Target file: {target_file}")

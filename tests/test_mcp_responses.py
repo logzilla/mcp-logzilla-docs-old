@@ -36,8 +36,8 @@ class DocumentationTestCase:
         self.expected_keywords = expected_keywords or []  # Keywords that should appear in content
 
 
-# Default documentation path
-DEFAULT_DOCS_PATH = "../../../lz/ui/app/docs"
+# Default documentation path (relative to main directory when running tests)
+DEFAULT_DOCS_PATH = "./logzilla-docs"
 
 
 @pytest.fixture(scope="session")
@@ -51,9 +51,9 @@ def docs_path() -> str:
     if env_path:
         candidate_paths.append(Path(env_path))
 
-    # 2. Path relative to repo root (../.. / lz/ui/app/docs)
-    repo_root = Path(__file__).resolve().parents[3]
-    candidate_paths.append(repo_root / "lz" / "ui" / "app" / "docs")
+    # 2. Path relative to repo root (./ logzilla-docs)
+    repo_root = Path(__file__).resolve().parents[1]
+    candidate_paths.append(repo_root / "logzilla-docs")
 
     # 3. Original default relative path (for backwards compatibility)
     candidate_paths.append(Path(DEFAULT_DOCS_PATH).resolve())
@@ -78,7 +78,7 @@ async def test_server_responses(docs_path=None):
     
     # Set up paths - use provided path or default
     if docs_path is None:
-        docs_path = "../../../lz/ui/app/docs"  # Default relative path from docs-server directory
+        docs_path = "./logzilla-docs"  # Default relative path from main directory
     
     # Convert to absolute path for better error reporting
     docs_path = os.path.abspath(docs_path)
@@ -471,8 +471,8 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
   python test_server_responses.py
-  python test_server_responses.py --docs-path /path/to/logzilla/docs
-  python test_server_responses.py --docs-path ../../../lz/ui/app/docs
+      python test_server_responses.py --docs-path /path/to/logzilla/docs
+    python tests/test_mcp_responses.py --docs-path ./logzilla-docs
         """
     )
     
@@ -480,7 +480,7 @@ def parse_arguments():
         "--docs-path",
         type=str,
         default=None,
-        help="Path to LogZilla documentation directory (default: ../../../lz/ui/app/docs)"
+        help="Path to LogZilla documentation directory (default: ./logzilla-docs)"
     )
     
     parser.add_argument(

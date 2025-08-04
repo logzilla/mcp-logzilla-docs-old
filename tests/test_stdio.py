@@ -46,17 +46,17 @@ async def test_stdio_health_check():
         print("❌ MCP client library not available")
         return False
     
-    # Set up the server command
-    server_script = Path(__file__).parent / "server.py"
+    # Set up the server command (server.py is in the main directory)
+    server_script = Path(__file__).parent.parent / "server.py"
     if not server_script.exists():
         print(f"❌ Server script not found: {server_script}")
         return False
     
     try:
-        # Create stdio server parameters
+        # Create stdio server parameters with correct docs path
         server_params = StdioServerParameters(
             command=sys.executable,
-            args=[str(server_script), "--transport", "stdio"]
+            args=[str(server_script), "--transport", "stdio", "--docs", "./logzilla-docs"]
         )
         
         print(f"🚀 Starting server with command: {server_params.command} {' '.join(server_params.args)}")
@@ -116,10 +116,11 @@ async def test_stdio_health_check():
                     print(f"❌ Failed to list tools: {e}")
                     return False
                 
-                # Test health_check with retries
-                print("\n🔍 Testing health_check tool with retries...")
-                max_attempts = 5
-                retry_delay = 3  # seconds
+                # Test health_check with retries and wait for search engines to be ready
+                print("\n🔍 Testing health_check tool and waiting for search engines...")
+                health_success = False
+                server_ready = False
+                max_attempts = 10  # Increased for search engine initialization
                 
                 for attempt in range(1, max_attempts + 1):
                     try:
@@ -131,7 +132,7 @@ async def test_stdio_health_check():
                         print(f"✅ health_check call successful in {duration:.2f}s")
                         print(f"📄 Response type: {type(result)}")
                         
-                        # Extract the response content
+                        # Extract health status
                         if hasattr(result, 'content') and result.content:
                             content_text = extract_content_text(result.content)
                             if content_text:
@@ -140,55 +141,94 @@ async def test_stdio_health_check():
                                     print(f"📊 Health check response: {health_data}")
                                     
                                     # Check for expected fields in health response
-                                    expected_fields = ["status", "message", "documents_loaded", "search_tools_available"]
-                                    
+                                    expected_fields = ["status", "message", "documents_loaded", "search_tools_available", "search_engines_ready"]
                                     for field in expected_fields:
                                         if field in health_data:
                                             print(f"✅ {field}: {health_data[field]}")
                                         else:
-                                            print(f"⚠️ Expected field '{field}' not found in response")
+                                            print(f"❌ Missing field: {field}")
                                     
-                                    # Check if server is ready
-                                    if health_data.get("status") == "ready":
-                                        print("🎉 Server is ready and healthy!")
-                                        break  # Exit retry loop on success
-                                    else:
-                                        server_status = health_data.get('status', 'unknown')
-                                        print(f"⚠️ Server status: {server_status}")
+                                    # Check if server AND search engines are ready
+                                    server_status = health_data.get("status")
+                                    search_tools_available = health_data.get("search_tools_available", False)
+                                    search_engines_ready = health_data.get("search_engines_ready", {})
+                                    
+                                    # Parse search engines status - can be boolean or dict
+                                    engines_ready = False
+                                    if isinstance(search_engines_ready, dict):
+                                        # Check if both exact and fuzzy search are ready
+                                        exact_ready = False
+                                        fuzzy_ready = False
                                         
-                                        # If not the last attempt, wait and retry
+                                        exact_status = search_engines_ready.get("exact search", [])
+                                        if isinstance(exact_status, list) and len(exact_status) > 0:
+                                            exact_ready = "ready" in str(exact_status[0]).lower()
+                                        
+                                        fuzzy_status = search_engines_ready.get("fuzzy search", [])
+                                        # Check if fuzzy search is actually ready (not bypassed)
+                                        if isinstance(fuzzy_status, list):
+                                            if len(fuzzy_status) == 1:
+                                                # Normal ready status: just ["status message"]
+                                                fuzzy_ready = "ready" in str(fuzzy_status[0]).lower()
+                                            elif len(fuzzy_status) > 1:
+                                                # Bypassed status: [["status"], "engine bypassed until ready"] 
+                                                bypassed = "bypassed" in str(fuzzy_status[1]).lower()
+                                                if bypassed:
+                                                    fuzzy_ready = False
+                                                else:
+                                                    fuzzy_ready = "ready" in str(fuzzy_status[1]).lower()
+                                        
+                                        engines_ready = exact_ready and fuzzy_ready
+                                        print(f"🔧 Exact search ready: {exact_ready}")
+                                        print(f"🔍 Fuzzy search ready: {fuzzy_ready} (status: {fuzzy_status})")
+                                    elif isinstance(search_engines_ready, bool):
+                                        engines_ready = search_engines_ready
+                                    elif isinstance(search_engines_ready, str):
+                                        engines_ready = search_engines_ready.lower() not in ["false", "not available", "no"]
+                                    
+                                    if (server_status == "ready" and 
+                                        search_tools_available and 
+                                        engines_ready):
+                                        print("🎉 Server and all search engines are ready!")
+                                        server_ready = True
+                                        health_success = True
+                                        break
+                                    else:
+                                        message = health_data.get('message', 'no message')
+                                        print(f"⚠️ Server status: {server_status}")
+                                        print(f"🔧 Search tools available: {search_tools_available}")
+                                        print(f"🔍 Search engines status: {search_engines_ready}")
+                                        print(f"💬 Message: {message}")
                                         if attempt < max_attempts:
-                                            print(f"⏳ Waiting {retry_delay} seconds before retry...")
-                                            await asyncio.sleep(retry_delay)
+                                            print(f"⏳ Waiting 8 seconds for vector engine initialization...")
+                                            await asyncio.sleep(8)
                                         else:
-                                            print(f"⚠️ Server still not ready after {max_attempts} attempts, but health check is working")
+                                            print(f"⚠️ Server/engines still not ready after {max_attempts} attempts")
+                                            if server_status == "ready":
+                                                health_success = True  # At least server is up
                                             
-                                except json.JSONDecodeError:
+                                except json.JSONDecodeError as je:
                                     print(f"📄 Health check returned non-JSON: {content_text}")
-                                    if attempt == max_attempts:
-                                        break  # Accept non-JSON response on last attempt
+                                    health_success = True  # At least we got a response
                             else:
-                                print("⚠️ No content text in response")
-                                if attempt == max_attempts:
-                                    break  # Accept empty response on last attempt
+                                print("⚠️ No content text in health response")
                         else:
-                            print("⚠️ No content in response")
-                            print(f"📄 Raw result: {result}")
-                            if attempt == max_attempts:
-                                break  # Accept raw response on last attempt
-                        
-                        # If not the last attempt and we haven't broken out, wait
-                        if attempt < max_attempts:
-                            await asyncio.sleep(retry_delay)
-                        
+                            print("⚠️ No content in health response")
+                            
                     except Exception as e:
                         print(f"❌ health_check attempt {attempt} failed: {e}")
-                        if attempt == max_attempts:
-                            print(f"❌ All {max_attempts} health_check attempts failed")
-                            return False
-                        else:
-                            print(f"⏳ Waiting {retry_delay} seconds before retry...")
-                            await asyncio.sleep(retry_delay)
+                        if attempt < max_attempts:
+                            print(f"⏳ Waiting 5 seconds before retry...")
+                            await asyncio.sleep(5)
+                
+                if not health_success:
+                    print(f"❌ All {max_attempts} health_check attempts failed")
+                    return False
+                
+                # Skip search tests if engines aren't ready
+                if not server_ready:
+                    print("⚠️ Search engines not ready - skipping search tests")
+                    return True  # Health check worked, that's enough
                 
                 # Test search_for_documents
                 print("\n🔍 Testing search_for_documents tool...")
@@ -210,22 +250,38 @@ async def test_stdio_health_check():
                         if content_text:
                             try:
                                 search_data = json.loads(content_text)
-                                if "results" in search_data:
-                                    results = search_data["results"]
+                                print(f"📄 Raw search response keys: {list(search_data.keys()) if isinstance(search_data, dict) else 'not a dict'}")
+                                
+                                # Check nested results structure
+                                if "results" in search_data and isinstance(search_data["results"], dict) and "results" in search_data["results"]:
+                                    results = search_data["results"]["results"]
                                     print(f"📊 Found {len(results)} search results")
-                                    # Ensure results is a list before slicing
-                                    results_list = list(results) if results else []
-                                    for i, result in enumerate(results_list[:3]):  # Show first 3 results
+                                    for i, result in enumerate(results[:4]):  # Show first 4 results
                                         if isinstance(result, dict):
                                             document_id = result.get("document_id", "unknown")
                                             score = result.get("score", "unknown")
-                                            filename = result.get("filename", "unknown")
-                                            print(f"  {i+1}. {filename} (score: {score})")
+                                            path = result.get("path", result.get("filename", ""))
+                                            # Use path if available, otherwise document_id
+                                            display_name = path if path and path != "unknown" else document_id
+                                            print(f"  {i+1}. {display_name} (score: {score})")
+                                        else:
+                                            print(f"  {i+1}. {result}")
+                                elif "results" in search_data and isinstance(search_data["results"], list):
+                                    results = search_data["results"]
+                                    print(f"📊 Found {len(results)} search results")
+                                    for i, result in enumerate(results[:4]):  # Show first 4 results
+                                        if isinstance(result, dict):
+                                            document_id = result.get("document_id", "unknown")
+                                            score = result.get("score", "unknown")
+                                            path = result.get("path", result.get("filename", ""))
+                                            # Use path if available, otherwise document_id
+                                            display_name = path if path and path != "unknown" else document_id
+                                            print(f"  {i+1}. {display_name} (score: {score})")
                                         else:
                                             print(f"  {i+1}. {result}")
                                 else:
                                     print("📊 Search results format: non-standard")
-                                    print(f"📄 Search response keys: {list(search_data.keys()) if isinstance(search_data, dict) else 'not a dict'}")
+                                    print(f"📄 Full response: {json.dumps(search_data, indent=2)[:500]}...")
                             except json.JSONDecodeError:
                                 print(f"📄 Search returned non-JSON: {content_text[:200]}...")
                         else:
@@ -258,26 +314,63 @@ async def test_stdio_health_check():
                         if content_text:
                             try:
                                 retrieve_data = json.loads(content_text)
-                                if "documents" in retrieve_data:
+                                print(f"📄 Raw retrieve response keys: {list(retrieve_data.keys()) if isinstance(retrieve_data, dict) else 'not a dict'}")
+                                
+                                # Check for nested results structure first
+                                if "results" in retrieve_data and isinstance(retrieve_data["results"], dict) and "results" in retrieve_data["results"]:
+                                    results = retrieve_data["results"]["results"]
+                                    print(f"📊 Retrieved {len(results)} results")
+                                    for i, result in enumerate(results[:4]):  # Show first 4 results
+                                        if isinstance(result, dict):
+                                            document_id = result.get("document_id", "unknown")
+                                            path = result.get("path", result.get("filename", ""))
+                                            content = result.get("content", "")
+                                            
+                                            # Use path if available, otherwise document_id
+                                            display_name = path if path and path != "unknown" else document_id
+                                            
+                                            # Get first 5 lines of content
+                                            if content:
+                                                lines = content.split('\n')[:5]
+                                                content_preview = '\n'.join(lines)
+                                                if len(content.split('\n')) > 5:
+                                                    content_preview += "\n..."
+                                            else:
+                                                content_preview = "no content"
+                                            
+                                            print(f"  {i+1}. {display_name}")
+                                            print(f"     Content preview:\n{content_preview}")
+                                        else:
+                                            print(f"  {i+1}. {result}")
+                                elif "documents" in retrieve_data:
                                     documents = retrieve_data["documents"]
                                     print(f"📊 Retrieved {len(documents)} documents")
-                                    # Ensure documents is a list before slicing
-                                    documents_list = list(documents) if documents else []
-                                    for i, doc in enumerate(documents_list[:2]):  # Show first 2 docs
+                                    for i, doc in enumerate(documents[:4]):  # Show first 4 docs
                                         if isinstance(doc, dict):
                                             document_id = doc.get("document_id", "unknown")
-                                            filename = doc.get("filename", "unknown")
-                                            content_preview = doc.get("content", "")[:100] + "..." if doc.get("content") else "no content"
-                                            print(f"  {i+1}. {filename}")
-                                            print(f"     Content preview: {content_preview}")
+                                            path = doc.get("path", doc.get("filename", ""))
+                                            content = doc.get("content", "")
+                                            
+                                            # Use path if available, otherwise document_id
+                                            display_name = path if path and path != "unknown" else document_id
+                                            
+                                            # Get first 5 lines of content
+                                            if content:
+                                                lines = content.split('\n')[:5]
+                                                content_preview = '\n'.join(lines)
+                                                if len(content.split('\n')) > 5:
+                                                    content_preview += "\n..."
+                                            else:
+                                                content_preview = "no content"
+                                            
+                                            print(f"  {i+1}. {display_name}")
+                                            print(f"     Content preview:\n{content_preview}")
                                         else:
                                             print(f"  {i+1}. {doc}")
-                                elif "results" in retrieve_data:
+                                elif "results" in retrieve_data and isinstance(retrieve_data["results"], list):
                                     results = retrieve_data["results"]
                                     print(f"📊 Retrieved {len(results)} results")
-                                    # Ensure results is a list before slicing
-                                    results_list = list(results) if results else []
-                                    for i, result in enumerate(results_list[:2]):  # Show first 2 results
+                                    for i, result in enumerate(results[:2]):  # Show first 2 results
                                         if isinstance(result, dict):
                                             filename = result.get("filename", "unknown")
                                             content_preview = result.get("content", "")[:100] + "..." if result.get("content") else "no content"

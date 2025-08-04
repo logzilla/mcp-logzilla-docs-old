@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   logzilla-docs-server:
     build:
@@ -9,8 +7,8 @@ services:
     ports:
       - "127.0.0.1:8008:8008"
     volumes:
-      # Mount docs directory (adjust path as needed)
-      - ../docs:/app/docs:ro
+      # Mount logzilla production docs directory
+      - ../logzilla-docs:/app/docs:ro
       # Optional: Mount logs directory
       - ./logs:/app/logs
       # Optional: Mount model cache to persist models between container rebuilds
