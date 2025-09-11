@@ -14,12 +14,6 @@ from typing import Any, Dict, List, Optional, Union, Protocol, Callable
 from pydantic import BaseModel, Field
 from dataclasses import dataclass, field
 
-try:
-    from .document_cache import DocumentCache
-except ImportError:
-    # Fallback for direct execution
-    from document_cache import DocumentCache
-
 import os
 import logging
 import numpy as np
@@ -47,47 +41,24 @@ class DocumentChunk:
     """
     document_id: str
     chunk_index: int
-    chunk_id: str
     content: str
-    tokens: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
-
-class DocumentRequest(BaseModel):
-    """Document request model with validation and type hints"""
-    document_id: str = Field(
-        ..., 
-        description="Document identifier (relative path)",
-        min_length=1,
-        max_length=500
-    )
-    format: str = Field(
-        default="markdown", 
-        description="Output format for document content",
-        pattern=r"^(markdown|plain|html)$"
-    )
-
-    class Config:
-        """Pydantic configuration"""
-        extra = "forbid"
-        validate_assignment = True
 
 class Document:
     """Document model for hybrid search system"""
     
-    def __init__(self, id: str, name: str, path: str, size: int, content: str = "", 
-                 created_at: Optional[datetime] = None, updated_at: Optional[datetime] = None,
-                 metadata: Optional[Dict[str, Any]] = None):
+    def __init__(self, id: str, name: str, size: int, content: str = "", 
+                 metadata: Optional[Dict[str, Any]] = None,
+                 updated_at: Optional[datetime] = None):
         self.id = id
         self.name = name
-        self.path = path
         self.size = size
         self.content = content
-        self.created_at = created_at or datetime.now()
-        self.updated_at = updated_at or datetime.now()
         self.metadata = metadata or {}
+        self.updated_at = updated_at
 
     def __str__(self) -> str:
-        return f"Document(id={self.id}, name={self.name}, path={self.path}, size={self.size})"
+        return f"Document(id={self.id}, name={self.name}, size={self.size})"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -113,69 +84,21 @@ class Document:
         
         # Get file stats
         stat = file_path.stat()
-        created_at = datetime.fromtimestamp(stat.st_ctime)
         updated_at = datetime.fromtimestamp(stat.st_mtime)
         
         return cls(
             id=document_id,
             name=file_path.stem,
-            path=str(file_path),
             size=stat.st_size,
             content=content,
-            created_at=created_at,
             updated_at=updated_at,
             metadata={"file_extension": file_path.suffix}
         )
 
-class SearchRequest(BaseModel):
-    """Request model for search with advanced parameters"""
-    query: str = Field(
-        ..., 
-        description="Search query string",
-        min_length=1,
-        max_length=1000
-    )
-    top_k: int = Field(
-        default=10,
-        description="Maximum number of results to return",
-        ge=1,
-        le=50
-    )
-    min_quality: int = Field(
-        default=0,
-        description="Quality cutoff 0-100 (0=return all, 100=exact matches only)",
-        ge=0,
-        le=100
-    )
-    include_scores: bool = Field(
-        default=True,
-        description="Include detailed scoring information"
-    )
-
-    class Config:
-        """Pydantic configuration"""
-        extra = "forbid"
-        validate_assignment = True
-
-@dataclass
-class SearchResult:
-    """
-    Search result with score
-    
-    Attributes:
-        document_id: Document identifier
-        score: Relevance score (0.0 to 1.0)
-    """
-    document_id: str
-    score: float
 
 class SearchEngine(ABC):
     """Abstract base class for search engines"""
-    
-    def __init__(self, document_cache: DocumentCache):
-        self._index_ready = False
-        self.document_cache = document_cache
-    
+   
     @property
     def is_ready(self) -> bool:
         """Check if the search engine is ready"""
@@ -187,27 +110,25 @@ class SearchEngine(ABC):
         pass
     
     @abstractmethod
-    def _build_index(self) -> None:
-        """Build the search index"""
-        pass
-        
-    @abstractmethod
-    def search(self, query: str, top_k: int = 10) -> List[SearchResult]:
-        """Search for documents matching the query"""
+    def search_for_chunks(self, query: str, top_k: int = 10) -> List[DocumentChunk]:
+        """
+        Search for chunks of documents matching the query
+        """
         pass
     
     @abstractmethod
-    def get_stats(self) -> Dict[str, Any]:
-        """Get search engine statistics"""
+    def search_for_documents(self, query: str, top_k: int = 10) -> List[DocumentChunk]:
+        """
+        Search for full documents matching the query
+        """
         pass
-    
+
     @abstractmethod
     def get_status(self) -> List[str]:
         """Get search engine status messages"""
         pass
 
     @classmethod
-    @abstractmethod
     def get_name(cls) -> str:
         """Get search engine name"""
-        pass
+        return cls.__name__
