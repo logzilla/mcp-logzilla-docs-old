@@ -10,13 +10,10 @@ the server, search tools, and other components.
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Protocol, Callable
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional, Union, Callable
 from dataclasses import dataclass, field
 
-import os
 import logging
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -32,20 +29,26 @@ class DocumentChunk:
     Document chunk for search indexing
     
     Attributes:
-        document_id: Parent document identifier
+        document_id: Parent document identifier (string or integer key)
         chunk_index: Index of chunk within document
-        chunk_id: Unique chunk identifier (document_id:chunk_index)
         content: Raw text content of chunk
-        tokens: Tokenized text for BM25 indexing
-        metadata: Additional chunk metadata
+        metadata: Additional chunk metadata (e.g., scores)
     """
-    document_id: str
+    document_id: Union[str, int]
     chunk_index: int
     content: str
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "document_id": self.document_id,
+            "chunk_index": self.chunk_index,
+            "content": self.content,
+            "metadata": self.metadata,
+        }
+
 class Document:
-    """Document model for hybrid search system"""
+    """Document model for search system"""
     
     def __init__(self, id: str, name: str, size: int, content: str = "", 
                  metadata: Optional[Dict[str, Any]] = None,
@@ -95,6 +98,16 @@ class Document:
             metadata={"file_extension": file_path.suffix}
         )
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "size": self.size,
+            "content": self.content,
+            "metadata": self.metadata,
+            "updated_at": self.updated_at.isoformat() if isinstance(self.updated_at, datetime) else self.updated_at,
+        }
+
 
 class SearchEngine(ABC):
     """Abstract base class for search engines"""
@@ -102,7 +115,7 @@ class SearchEngine(ABC):
     @property
     def is_ready(self) -> bool:
         """Check if the search engine is ready"""
-        return self._index_ready
+        return getattr(self, "_is_ready", False)
         
     @abstractmethod
     def initialize(self, on_ready_fn: Optional[Callable[[bool], None]] = None) -> None:
@@ -117,7 +130,7 @@ class SearchEngine(ABC):
         pass
     
     @abstractmethod
-    def search_for_documents(self, query: str, top_k: int = 10) -> List[DocumentChunk]:
+    def search_for_documents(self, query: str, top_k: int = 10) -> List['Document']:
         """
         Search for full documents matching the query
         """

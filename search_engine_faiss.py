@@ -154,6 +154,12 @@ class FaissSearchEngine(SearchEngine):
             # read index
             self._index = faiss.read_index(self._index_path)
             logger.info(f"Successfully loaded FAISS index with {self._index.ntotal} vectors")
+
+            # validate embedding dimension compatibility
+            index_dim = getattr(self._index, 'd', None)
+            model_dim = self._sentence_transformer.dimension
+            if index_dim is not None and index_dim != model_dim:
+                raise ValueError(f"Embedding dimension mismatch: FAISS index d={index_dim}, model dimension={model_dim}")
             
             # read metadata, chunks, and documents
             with open(self._metadata_file, 'rb') as metadata_file:
@@ -173,6 +179,14 @@ class FaissSearchEngine(SearchEngine):
     def _search_for_chunks_internal(self, query_text: str, top_k: int = 10) -> List[DocumentChunk]:
         """Search for chunks of documents matching the query"""
         query_vector = self._sentence_transformer.encode([query_text]).astype('float32')
+        
+        # Normalize query for inner-product (cosine similarity) indices
+        try:
+            metric_type = getattr(self._index, 'metric_type', None)
+            if metric_type == faiss.METRIC_INNER_PRODUCT:
+                faiss.normalize_L2(query_vector)
+        except Exception as e:
+            logger.debug(f"Query normalization skipped due to error: {e}")
         
         # Search
         scores, vector_ids = self._index.search(query_vector, top_k)
@@ -219,22 +233,34 @@ class FaissSearchEngine(SearchEngine):
         # sort chunks by score (higher similarity = better)
         chunks.sort(key=lambda x: x.metadata.get('score', 0), reverse=True)
         
-        # remove duplicates
-        unique_chunks_indexes = []
+        # remove duplicates while preserving order
+        seen_doc_ids = set()
+        ordered_doc_ids = []
         for chunk in chunks:
-            if chunk.doc_id not in unique_chunks_indexes:
-                unique_chunks_indexes.append(chunk.doc_id)
+            doc_id = chunk.document_id
+            if doc_id not in seen_doc_ids:
+                seen_doc_ids.add(doc_id)
+                ordered_doc_ids.append(doc_id)
         
-        return [
-            Document(
-                self._metadata['documents'][doc_id]['id'],
-                self._metadata['documents'][doc_id]['name'],
-                self._metadata['documents'][doc_id]['size'],
-                self._metadata['documents'][doc_id]['content'],
-                self._metadata['documents'][doc_id]['updated_at'],
-                self._metadata['documents'][doc_id]['metadata']
-                ) 
-                for doc_id in unique_chunks_indexes][:top_k]
+        documents_meta = self._metadata['documents']
+        results: List[Document] = []
+        for doc_id in ordered_doc_ids[:top_k]:
+            try:
+                doc_meta = documents_meta[doc_id]
+                results.append(
+                    Document(
+                        id=doc_meta['id'],
+                        name=doc_meta['name'],
+                        size=doc_meta['size'],
+                        content=doc_meta.get('content', ''),
+                        metadata=doc_meta.get('metadata', {}),
+                        updated_at=doc_meta.get('updated_at')
+                    )
+                )
+            except Exception as e:
+                logger.warning(f"Failed to construct Document for id {doc_id}: {e}")
+                continue
+        return results
         
 
     def _calculate_document_search_result_multiplier(self, metadata):
@@ -318,5 +344,8 @@ class FaissSearchEngine(SearchEngine):
     @property
     def doc_count(self) -> int:
         """Get the number of documents in the search engine"""
-        return len(self._metadata['documents'])
+        try:
+            return len(self._metadata['documents']) if self._metadata and 'documents' in self._metadata else 0
+        except Exception:
+            return 0
     

@@ -101,7 +101,7 @@ class ServerSettings(BaseSettings):
         description="Server port number"
     )
     server_url: AnyHttpUrl = Field(
-        default=AnyHttpUrl("http://localhost:8000"),
+        default="http://localhost:8000",
         description="Full server URL"
     )
     
@@ -205,7 +205,15 @@ class FastApp:
                 """
                 
                 for server in servers:
-                    tools = [tool.name for tool in server._tool_manager.list_tools()]
+                    tools = []
+                    try:
+                        tools = [tool.name for tool in server._tool_manager.list_tools()]
+                    except Exception:
+                        try:
+                            maybe_tools = getattr(server, 'tools', [])
+                            tools = [getattr(t, 'name', str(t)) for t in maybe_tools]
+                        except Exception:
+                            tools = []
                     help_text += f"""
                     <h3>{server.name}</h3>
                     <p>{server.instructions}</p>
@@ -279,7 +287,12 @@ class MCPServer:
                     )
                     return {
                         "status": "success",
-                        "chunks": chunks,
+                        "chunks": [c.to_dict() if hasattr(c, 'to_dict') else {
+                            "document_id": getattr(c, 'document_id', None),
+                            "chunk_index": getattr(c, 'chunk_index', None),
+                            "content": getattr(c, 'content', None),
+                            "metadata": getattr(c, 'metadata', {}),
+                        } for c in chunks],
                         "query": query,
                         "total_chunks": len(chunks)
                     }
@@ -309,7 +322,14 @@ class MCPServer:
                 documents = self._search_engine.search_for_documents(query, top_k)
                 return {
                     "status": "success",
-                    "documents": documents,
+                    "documents": [d.to_dict() if hasattr(d, 'to_dict') else {
+                        "id": getattr(d, 'id', None),
+                        "name": getattr(d, 'name', None),
+                        "size": getattr(d, 'size', None),
+                        "content": getattr(d, 'content', ''),
+                        "metadata": getattr(d, 'metadata', {}),
+                        "updated_at": getattr(d, 'updated_at', None),
+                    } for d in documents],
                     "query": query,
                     "total_documents": len(documents)
                 }
@@ -504,7 +524,7 @@ Environment Variables:
         transport=args.transport,
         host=args.host,
         port=args.port,
-        server_url=AnyHttpUrl(f"http{'s' if args.transport == 'https' else ''}://{args.host}:{args.port}"),
+        server_url=f"http{'s' if args.transport == 'https' else ''}://{args.host}:{args.port}",
         transformer_device=args.device,
         ssl_cert_path=args.ssl_cert,
         ssl_key_path=args.ssl_key,
