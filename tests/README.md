@@ -1,13 +1,13 @@
 # MCP Docs Server — Tests & CI
 
-This repo includes a comprehensive, self-contained test suite for:
+This repo includes a comprehensive, real implementation test suite for:
 
 - `index_builder_faiss.py`
 - `models.py`
 - `search_engine_faiss.py`
 - `server.py`
 
-The tests are fast and do **not** require heavy native libs (FAISS, PyTorch, or Hugging Face) in CI or locally: they install lightweight **stubs** for `faiss`, `tiktoken`, `sentence_transformers`, `dotenv`, and the MCP modules during test setup.
+The tests use real libraries (sentence-transformers, FAISS, tiktoken, etc.) for higher confidence.
 
 ---
 
@@ -19,17 +19,17 @@ python -m venv .venv
 source .venv/bin/activate    # Windows: .venv\Scripts\activate
 python -m pip install -U pip
 
-# Minimal test dependencies
-pip install pytest pydantic pydantic-settings
+# Test dependencies
+pip install pytest pydantic pydantic-settings sentence-transformers faiss-cpu tiktoken beautifulsoup4
 
-# (Optional) If you want server FastAPI routes available in imports:
-# pip install fastapi uvicorn
+# Optional for HTTP tests
+# pip install fastapi uvicorn httpx
 
-# Run tests (unit + integration, excluding performance)
-pytest -m "not performance"
+# Run tests (unit + integration)
+pytest -q
 ````
 
-> The suite automatically stubs FAISS/transformers/etc., so you don’t need to install them.
+> Some tests are marked slow; set `SKIP_SLOW_TESTS=true` to skip.
 
 ---
 
@@ -37,11 +37,11 @@ pytest -m "not performance"
 
 ```
 tests/
-  conftest.py                       # installs test-time stubs for faiss/tiktoken/etc.
-  test_index_builder_faiss.py       # unit & CLI tests for index builder
+  conftest.py                       # real fixtures and sample data setup
+  test_index_builder.py             # index builder tests (real libraries)
   test_models.py                    # models.py coverage
-  test_search_engine_faiss.py       # FAISS engine init/search/cleanup tests
-  test_server.py                    # MCP server tool registration & CLI smoke tests
+  test_search_engine.py             # FAISS engine init/search/cleanup tests (real)
+  test_server.py                    # MCP server tests (real)
 pytest.ini                          # marks and default settings
 ```
 
@@ -58,13 +58,13 @@ pytest -m "not performance" -q
 Only a single file:
 
 ```bash
-pytest tests/test_search_engine_faiss.py -q
+pytest tests/test_search_engine.py -q
 ```
 
 Only one test:
 
 ```bash
-pytest tests/test_index_builder_faiss.py::test_build_index_e2e_writes_files -q
+pytest tests/test_index_builder.py::test_build_index_e2e_with_real_libraries -q
 ```
 
 Show print/log output:
@@ -115,11 +115,9 @@ A ready-to-use workflow is provided in `.github/workflows/python-tests.yml`. It:
 
 ---
 
-## Notes & gotchas
+## Environment
 
-* The tests import your modules **after** installing stubs, so imports are lightweight and deterministic.
-* If you later want tests that *actually* hit real FAISS or real transformers, add a separate test file and **do not** use the stubs fixture there — or gate them with a marker like `@pytest.mark.realdeps`.
-* `server.py` imports `pydantic`/`pydantic_settings` unconditionally. That’s why those two packages are required for the server tests to import the module cleanly.
+`server.py` imports `pydantic`/`pydantic_settings` unconditionally. Ensure those packages are installed.
 
 ````
 

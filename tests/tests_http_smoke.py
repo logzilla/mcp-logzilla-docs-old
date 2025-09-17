@@ -10,23 +10,22 @@ HTTP smoke test (integration)
 import asyncio
 import json
 import os
+from pathlib import Path
+import pytest
 import signal
 import socket
 import subprocess
 import sys
 import time
-from pathlib import Path
-
-import pytest
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_http_smoke_health_check(tmp_path):
-    httpx = pytest.importorskip("httpx")
+    import httpx
     # mcp client pieces
-    mcp_stream = pytest.importorskip("mcp.client.streamable_http").streamablehttp_client
-    ClientSession = pytest.importorskip("mcp").ClientSession
+    from mcp.client.streamable_http import streamablehttp_client as mcp_stream
+    from mcp import ClientSession
 
     server_py = _find_server_py()
     docs_dir = _make_tiny_docs(tmp_path)
@@ -66,9 +65,15 @@ async def test_http_smoke_health_check(tmp_path):
                 tool_names = [t.name for t in getattr(tools, "tools", [])]
                 assert "health_check" in tool_names
 
+                # health_check via MCP
                 res = await session.call_tool("health_check", {})
                 assert getattr(res, "content", None), "health_check returned no content"
                 text = _extract_text(res.content)
+                # search_for_chunks via MCP
+                assert "search_for_chunks" in tool_names
+                res2 = await session.call_tool("search_for_chunks", {"query": "Hello", "top_k": 3})
+                text2 = _extract_text(getattr(res2, "content", []))
+                assert isinstance(text2, str) and text2 != ""
                 # be permissive about shape
                 try:
                     payload = json.loads(text)
@@ -103,7 +108,7 @@ def _ephemeral_port() -> int:
         return s.getsockname()[1]
 
 async def _wait_http_up(url: str, timeout: float = 60.0) -> bool:
-    httpx = pytest.importorskip("httpx")
+    import httpx
     deadline = time.monotonic() + timeout
     async with httpx.AsyncClient(timeout=5.0) as client:
         while time.monotonic() < deadline:

@@ -9,19 +9,17 @@ STDIO smoke test (integration)
 """
 
 import json
-import sys
 from pathlib import Path
-
 import pytest
+import sys
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_stdio_smoke_health_check(tmp_path):
     # mcp client pieces
-    mcp_stdio = pytest.importorskip("mcp.client.stdio").stdio_client
-    ClientSession = pytest.importorskip("mcp").ClientSession
-    StdioServerParameters = pytest.importorskip("mcp").StdioServerParameters
+    from mcp.client.stdio import stdio_client as mcp_stdio
+    from mcp import ClientSession, StdioServerParameters
 
     server_py = _find_server_py()
     docs_dir = _make_tiny_docs(tmp_path)
@@ -38,9 +36,15 @@ async def test_stdio_smoke_health_check(tmp_path):
             tool_names = [t.name for t in getattr(tools, "tools", [])]
             assert "health_check" in tool_names
 
+            # health_check via MCP
             res = await session.call_tool("health_check", {})
             assert getattr(res, "content", None), "health_check returned no content"
             text = _extract_text(res.content)
+            # search_for_chunks via MCP
+            assert "search_for_chunks" in tool_names
+            res2 = await session.call_tool("search_for_chunks", {"query": "Hello", "top_k": 3})
+            text2 = _extract_text(getattr(res2, "content", []))
+            assert isinstance(text2, str) and text2 != ""
             # JSON payload is nice-to-have, but don't be brittle
             try:
                 payload = json.loads(text)

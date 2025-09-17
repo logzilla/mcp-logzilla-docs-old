@@ -2,18 +2,16 @@
 """
 Real implementation tests for search_engine_faiss.py using actual libraries.
 """
-import pytest
-import pickle
 import numpy as np
 from pathlib import Path
+import pickle
+import pytest
 from test_config import (
     get_model_name, get_device, should_skip_slow_tests,
     SAMPLE_DOCUMENTS, TEST_QUERIES, EXPECTED_RESULTS
 )
-
-# Skip all tests if libraries are missing
-sentence_transformers = pytest.importorskip("sentence_transformers")
-faiss = pytest.importorskip("faiss")
+import sentence_transformers
+import faiss
 
 def create_test_index(test_output_dir, test_model_name, test_device):
     """Helper to create a real test index."""
@@ -43,7 +41,7 @@ def create_test_index(test_output_dir, test_model_name, test_device):
     builder.build_index(documents, test_output_dir, index_name)
     return index_name
 
-def test_model_sentence_transformer_real(test_model_name, test_device):
+def test_model_sentence_transformer(test_model_name, test_device):
     """Test real SentenceTransformer model."""
     import search_engine_faiss
     
@@ -66,7 +64,7 @@ def test_model_sentence_transformer_real(test_model_name, test_device):
     model.cleanup()
 
 @pytest.mark.slow
-def test_faiss_search_engine_initialize_real(test_model_name, test_device, test_output_dir, skip_if_slow):
+def test_faiss_search_engine_initialize(test_model_name, test_device, test_output_dir, skip_if_slow):
     """Test FaissSearchEngine initialization with real index."""
     import search_engine_faiss
     
@@ -108,7 +106,7 @@ def test_faiss_initialize_missing_files(test_model_name, test_device, test_outpu
         engine.initialize()
 
 @pytest.mark.slow
-def test_search_for_chunks_real(test_model_name, test_device, test_output_dir, skip_if_slow):
+def test_search_for_chunks(test_model_name, test_device, test_output_dir, skip_if_slow):
     """Test chunk search with real implementation."""
     import search_engine_faiss
     
@@ -139,7 +137,7 @@ def test_search_for_chunks_real(test_model_name, test_device, test_output_dir, s
             assert len(chunk.content) > 0
 
 @pytest.mark.slow  
-def test_search_for_documents_real(test_model_name, test_device, test_output_dir, skip_if_slow):
+def test_search_for_documents(test_model_name, test_device, test_output_dir, skip_if_slow):
     """Test document search with real implementation."""
     import search_engine_faiss
     
@@ -172,7 +170,7 @@ def test_search_for_documents_real(test_model_name, test_device, test_output_dir
             assert hasattr(doc, 'metadata')
             assert len(doc.content) > 0
 
-def test_search_empty_query_real(test_model_name, test_device, test_output_dir):
+def test_search_empty_query(test_model_name, test_device, test_output_dir):
     """Test search with empty query."""
     import search_engine_faiss
     
@@ -211,7 +209,7 @@ def test_search_before_initialization(test_model_name, test_device, test_output_
     with pytest.raises(ValueError, match="not initialized"):
         engine.search_for_documents("test query")
 
-def test_result_multiplier_calculation_real():
+def test_result_multiplier_calculation():
     """Test result multiplier calculation with real metadata."""
     import search_engine_faiss
     
@@ -243,7 +241,7 @@ def test_result_multiplier_calculation_real():
     # Higher chunk-to-doc ratio should give higher multiplier (up to limit)
     assert multipliers[1] >= multipliers[0]
 
-def test_normalization_logic_real():
+def test_normalization_logic():
     """Test query normalization logic with real FAISS index."""
     import search_engine_faiss
     
@@ -263,7 +261,7 @@ def test_normalization_logic_real():
     engine._metadata = {"config": {"index_type": "IndexFlatL2"}}
     assert engine._should_normalize_query() is False
 
-def test_cleanup_real(test_model_name, test_device, test_output_dir):
+def test_cleanup(test_model_name, test_device, test_output_dir):
     """Test cleanup with real components."""
     import search_engine_faiss
     
@@ -326,7 +324,7 @@ def test_end_to_end_search_accuracy(test_model_name, test_device, test_output_di
             # Score should be reasonable for semantic similarity
             # (not too strict since model quality varies)
 
-def test_faiss_initialize_dimension_mismatch_real(test_model_name, test_device, test_output_dir):
+def test_faiss_initialize_dimension_mismatch(test_model_name, test_device, test_output_dir):
     """Test initialization with dimension mismatch using real FAISS index."""
     import search_engine_faiss
     import faiss
@@ -358,7 +356,7 @@ def test_faiss_initialize_dimension_mismatch_real(test_model_name, test_device, 
     with pytest.raises(ValueError, match="dimension mismatch"):
         engine.initialize()
 
-def test_faiss_initialize_corrupted_metadata_real(test_model_name, test_device, test_output_dir):
+def test_faiss_initialize_corrupted_metadata(test_model_name, test_device, test_output_dir):
     """Test initialization with corrupted metadata file using real implementation."""
     import search_engine_faiss
     import faiss
@@ -383,7 +381,7 @@ def test_faiss_initialize_corrupted_metadata_real(test_model_name, test_device, 
     
     model.cleanup()
 
-def test_faiss_initialize_invalid_metadata_structure_real(test_model_name, test_device, test_output_dir):
+def test_faiss_initialize_invalid_metadata_structure(test_model_name, test_device, test_output_dir):
     """Test initialization with invalid metadata structure using real implementation."""
     import search_engine_faiss
     import faiss
@@ -410,7 +408,7 @@ def test_faiss_initialize_invalid_metadata_structure_real(test_model_name, test_
     
     model.cleanup()
 
-def test_search_for_chunks_normalization_and_invalid_ids_real(test_model_name, test_device, test_output_dir):
+def test_search_for_chunks_normalization_and_invalid_ids(test_model_name, test_device, test_output_dir):
     """Test chunk search with IP normalization and invalid IDs using real implementation."""
     import search_engine_faiss
     import faiss

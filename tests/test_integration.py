@@ -2,21 +2,19 @@
 """
 Integration tests using real libraries and end-to-end workflows.
 """
-import pytest
-import tempfile
-import shutil
 from pathlib import Path
+import pytest
+import shutil
+import tempfile
 from test_config import (
     get_model_name, get_device, SAMPLE_DOCUMENTS, TEST_QUERIES, EXPECTED_RESULTS
 )
-
-# Skip all tests if libraries are missing
-sentence_transformers = pytest.importorskip("sentence_transformers")
-faiss = pytest.importorskip("faiss")
-pydantic = pytest.importorskip("pydantic")
+import sentence_transformers
+import faiss
+import pydantic
 
 @pytest.mark.slow
-def test_full_pipeline_real(test_model_name, test_device):
+def test_full_pipeline(test_model_name, test_device):
     """Test complete pipeline from document loading to search with real libraries."""
     import index_builder_faiss
     import search_engine_faiss
@@ -101,7 +99,7 @@ def test_full_pipeline_real(test_model_name, test_device):
         engine.cleanup()
 
 @pytest.mark.slow
-def test_server_integration_real(test_model_name, test_device):
+def test_server_integration(test_model_name, test_device):
     """Test server integration with real components."""
     import server
     import index_builder_faiss
@@ -161,7 +159,7 @@ def test_server_integration_real(test_model_name, test_device):
         docs = mcp_server._search_engine.search_for_documents("machine learning", 2)
         assert len(docs) <= 2
 
-def test_error_recovery_real(test_model_name, test_device):
+def test_error_recovery(test_model_name, test_device):
     """Test error recovery with real components."""
     import search_engine_faiss
     
@@ -186,7 +184,7 @@ def test_error_recovery_real(test_model_name, test_device):
         # Cleanup should be safe even after failed initialization
         engine.cleanup()
 
-def test_concurrent_access_real(test_model_name, test_device):
+def test_concurrent_access(test_model_name, test_device):
     """Test concurrent access with real components."""
     import threading
     import time
@@ -260,7 +258,7 @@ def test_concurrent_access_real(test_model_name, test_device):
         
         engine.cleanup()
 
-def test_memory_usage_real(test_model_name, test_device):
+def test_memory_usage(test_model_name, test_device):
     """Test memory usage with real components."""
     import psutil
     import os

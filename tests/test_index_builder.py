@@ -2,22 +2,20 @@
 """
 Real implementation tests for index_builder_faiss.py using actual libraries.
 """
-import pytest
-import pickle
-import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+import pickle
+import pytest
+import sys
 from test_config import (
     DEFAULT_CHUNK_SIZE, DEFAULT_OVERLAP, SAMPLE_DOCUMENTS,
     get_model_name, get_device, should_skip_slow_tests
 )
+import sentence_transformers
+import faiss
+import tiktoken
 
-# Skip all tests if libraries are missing
-sentence_transformers = pytest.importorskip("sentence_transformers")
-faiss = pytest.importorskip("faiss")
-tiktoken = pytest.importorskip("tiktoken")
-
-def test_init_with_real_model(test_model_name, test_device, skip_if_slow):
+def test_init_with_model(test_model_name, test_device, skip_if_slow):
     """Test initialization with real sentence transformer model."""
     import index_builder_faiss
     
@@ -29,17 +27,17 @@ def test_init_with_real_model(test_model_name, test_device, skip_if_slow):
         encoding_name="cl100k_base"
     )
     
-    # Verify real model properties
+    # Verify model properties
     assert builder.dimension > 0
     assert builder.chunk_size == DEFAULT_CHUNK_SIZE
     assert builder.overlap == DEFAULT_OVERLAP
     
-    # Test real tokenizer
+    # Test tokenizer
     token_count = builder._count_tokens("hello world test")
     assert isinstance(token_count, int)
     assert token_count > 0
 
-def test_clean_html_content_with_real_beautifulsoup():
+def test_clean_html_content_with_beautifulsoup():
     """Test HTML cleaning with real BeautifulSoup."""
     import index_builder_faiss
     
@@ -83,7 +81,7 @@ def test_clean_html_content_with_real_beautifulsoup():
     assert "Footer content" not in cleaned
     assert "console.log" not in cleaned
 
-def test_token_aware_chunking_with_real_tokenizer(test_model_name, test_device):
+def test_token_aware_chunking_with_tokenizer(test_model_name, test_device):
     """Test chunking with real tokenizer."""
     import index_builder_faiss
     
@@ -110,7 +108,7 @@ def test_token_aware_chunking_with_real_tokenizer(test_model_name, test_device):
         assert chunk1_tokens <= builder.chunk_size + 20  # Allow more tolerance for overlap
         assert chunk2_tokens <= builder.chunk_size + 20
 
-def test_load_documents_from_directory_real(test_data_dir):
+def test_load_documents_from_directory(test_data_dir):
     """Test loading documents from real directory."""
     import index_builder_faiss
     
@@ -129,7 +127,15 @@ def test_load_documents_from_directory_real(test_data_dir):
     assert "Frontend Technologies" in html_doc["content"]  # Check for content that survives cleaning
     assert "<html>" not in html_doc["content"]  # HTML tags should be cleaned
 
-def test_load_documents_from_list_real():
+def test_load_documents_from_directory_missing_raises_real(tmp_path):
+    """Test that loading from a missing directory raises FileNotFoundError (real path)."""
+    import index_builder_faiss
+
+    builder = index_builder_faiss.DocumentIndexBuilder()
+    with pytest.raises(FileNotFoundError):
+        builder.load_documents_from_directory(tmp_path / "definitely_missing_dir")
+
+def test_load_documents_from_list():
     """Test loading documents from list with real data."""
     import index_builder_faiss
     
@@ -173,7 +179,7 @@ def test_load_documents_from_list_real():
     assert unnamed_doc["name"].startswith("document_")
 
 @pytest.mark.slow
-def test_build_index_e2e_with_real_libraries(test_model_name, test_device, test_output_dir, skip_if_slow):
+def test_build_index_e2e_with_libraries(test_model_name, test_device, test_output_dir, skip_if_slow):
     """End-to-end test with real FAISS and sentence transformers."""
     import index_builder_faiss
     
@@ -225,7 +231,7 @@ def test_build_index_e2e_with_real_libraries(test_model_name, test_device, test_
     assert index.ntotal > 0
     assert index.d == builder.dimension
 
-def test_build_index_validation_real():
+def test_build_index_validation():
     """Test validation with real implementation."""
     import index_builder_faiss
     
@@ -248,7 +254,7 @@ def test_build_index_validation_real():
     with pytest.raises(ValueError, match="No chunks were produced from the input documents"):
         builder.build_index(empty_docs, Path("/tmp"), "test")
 
-def test_cli_integration_real(test_data_dir, test_output_dir, test_model_name, monkeypatch):
+def test_cli_integration(test_data_dir, test_output_dir, test_model_name, monkeypatch):
     """Test CLI with real arguments."""
     import index_builder_faiss
     import sys
@@ -275,7 +281,7 @@ def test_cli_integration_real(test_data_dir, test_output_dir, test_model_name, m
     assert (test_output_dir / "cli_test.faiss").exists()
     assert (test_output_dir / "cli_test.pkl").exists()
 
-def test_split_sentence_by_tokens_handles_long_sentence_real(test_model_name, test_device):
+def test_split_sentence_by_tokens_handles_long_sentence(test_model_name, test_device):
     """Test sentence splitting with real tokenizer for long sentences."""
     import index_builder_faiss
     
@@ -306,7 +312,7 @@ def test_split_sentence_by_tokens_handles_long_sentence_real(test_model_name, te
     combined_tokens = set(combined.split())
     assert original_tokens.issubset(combined_tokens), "Split parts should contain all original tokens"
 
-def test_build_index_no_documents_raises_real():
+def test_build_index_no_documents_raises():
     """Test that building index with no documents raises error with real implementation."""
     import index_builder_faiss
     from pathlib import Path
@@ -317,7 +323,7 @@ def test_build_index_no_documents_raises_real():
     with pytest.raises(ValueError, match="No documents provided"):
         builder.build_index([], Path("/tmp"), "empty_test")
 
-def test_build_index_no_chunks_raises_real(test_model_name, test_device, test_output_dir):
+def test_build_index_no_chunks_raises(test_model_name, test_device, test_output_dir):
     """Test that building index with documents that produce no chunks raises error."""
     import index_builder_faiss
     

@@ -1,6 +1,6 @@
 config:
   chunk_size: 200
-  created_at: '2025-09-17T08:18:28.954685'
+  created_at: '2025-09-17T09:32:39.133775'
   dimension: 384
   index_type: IndexFlatIP
   model_name: sentence-transformers/all-MiniLM-L6-v2
