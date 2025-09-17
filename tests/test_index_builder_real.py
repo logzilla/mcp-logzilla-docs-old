@@ -274,3 +274,80 @@ def test_cli_integration_real(test_data_dir, test_output_dir, test_model_name, m
     # Verify output files
     assert (test_output_dir / "cli_test.faiss").exists()
     assert (test_output_dir / "cli_test.pkl").exists()
+
+def test_split_sentence_by_tokens_handles_long_sentence_real(test_model_name, test_device):
+    """Test sentence splitting with real tokenizer for long sentences."""
+    import index_builder_faiss
+    
+    builder = index_builder_faiss.DocumentIndexBuilder(
+        model_name=test_model_name,
+        chunk_size=10,  # Small chunk size to force splitting
+        overlap=0,
+        device=test_device
+    )
+    
+    # Create a long sentence that exceeds chunk size
+    long_sentence = "This is a very long sentence that contains many words and should be split into multiple parts when the chunk size is small because it exceeds the token limit that was set for testing purposes."
+    
+    # Test the sentence splitting
+    parts = builder._split_sentence_by_tokens(long_sentence, builder.chunk_size)
+    
+    # Verify all parts are within token limit
+    for part in parts:
+        token_count = builder._count_tokens(part)
+        assert token_count <= builder.chunk_size, f"Part '{part}' has {token_count} tokens, exceeds limit of {builder.chunk_size}"
+    
+    # Verify we got multiple parts
+    assert len(parts) > 1, "Long sentence should be split into multiple parts"
+    
+    # Verify all parts together contain the original content
+    combined = " ".join(parts)
+    original_tokens = set(long_sentence.split())
+    combined_tokens = set(combined.split())
+    assert original_tokens.issubset(combined_tokens), "Split parts should contain all original tokens"
+
+def test_build_index_no_documents_raises_real():
+    """Test that building index with no documents raises error with real implementation."""
+    import index_builder_faiss
+    from pathlib import Path
+    
+    builder = index_builder_faiss.DocumentIndexBuilder()
+    
+    # Try to build index with empty document list
+    with pytest.raises(ValueError, match="No documents provided"):
+        builder.build_index([], Path("/tmp"), "empty_test")
+
+def test_build_index_no_chunks_raises_real(test_model_name, test_device, test_output_dir):
+    """Test that building index with documents that produce no chunks raises error."""
+    import index_builder_faiss
+    
+    builder = index_builder_faiss.DocumentIndexBuilder(
+        model_name=test_model_name,
+        chunk_size=1000,  # Very large chunk size
+        overlap=0,
+        device=test_device
+    )
+    
+    # Create documents with very short content that won't produce chunks
+    documents = [
+        {
+            "id": 0,
+            "name": "empty_doc",
+            "size": 0,
+            "content": "",  # Empty content
+            "metadata": {},
+            "updated_at": "2024-01-01T00:00:00"
+        },
+        {
+            "id": 1,
+            "name": "whitespace_doc", 
+            "size": 3,
+            "content": "   ",  # Only whitespace
+            "metadata": {},
+            "updated_at": "2024-01-01T00:00:00"
+        }
+    ]
+    
+    # Should raise error when no valid chunks are produced
+    with pytest.raises(ValueError, match="No chunks were produced from the input documents"):
+        builder.build_index(documents, test_output_dir, "no_chunks_test")

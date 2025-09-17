@@ -325,3 +325,150 @@ def test_end_to_end_search_accuracy(test_model_name, test_device, test_output_di
             assert hasattr(top_doc, 'metadata')
             # Score should be reasonable for semantic similarity
             # (not too strict since model quality varies)
+
+def test_faiss_initialize_dimension_mismatch_real(test_model_name, test_device, test_output_dir):
+    """Test initialization with dimension mismatch using real FAISS index."""
+    import search_engine_faiss
+    import faiss
+    
+    # Create a FAISS index with wrong dimension
+    wrong_dimension = 128  # Different from model dimension
+    bad_index = faiss.IndexFlatIP(wrong_dimension)
+    
+    # Save the bad index
+    index_path = test_output_dir / "bad_index.faiss"
+    faiss.write_index(bad_index, str(index_path))
+    
+    # Create valid metadata
+    metadata = {
+        "vector_mapping": {0: {"doc_id": 0, "chunk_index": 0}},
+        "documents": {0: {"name": "test", "content": "test"}},
+        "config": {"model_name": test_model_name, "dimension": wrong_dimension}
+    }
+    metadata_path = test_output_dir / "bad_index.pkl"
+    import pickle
+    with open(metadata_path, 'wb') as f:
+        pickle.dump(metadata, f)
+    
+    # Try to initialize with mismatched dimensions
+    engine = search_engine_faiss.FaissSearchEngine(
+        "bad_index", test_output_dir, test_model_name, device=test_device
+    )
+    
+    with pytest.raises(ValueError, match="dimension mismatch"):
+        engine.initialize()
+
+def test_faiss_initialize_corrupted_metadata_real(test_model_name, test_device, test_output_dir):
+    """Test initialization with corrupted metadata file using real implementation."""
+    import search_engine_faiss
+    import faiss
+    
+    # Create valid FAISS index
+    model = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    index = faiss.IndexFlatIP(model.dimension)
+    index_path = test_output_dir / "corrupted_meta.faiss"
+    faiss.write_index(index, str(index_path))
+    
+    # Create corrupted metadata file
+    metadata_path = test_output_dir / "corrupted_meta.pkl"
+    with open(metadata_path, 'wb') as f:
+        f.write(b"corrupted pickle data that cannot be loaded")
+    
+    engine = search_engine_faiss.FaissSearchEngine(
+        "corrupted_meta", test_output_dir, test_model_name, device=test_device
+    )
+    
+    with pytest.raises(Exception):  # Pickle loading will fail
+        engine.initialize()
+    
+    model.cleanup()
+
+def test_faiss_initialize_invalid_metadata_structure_real(test_model_name, test_device, test_output_dir):
+    """Test initialization with invalid metadata structure using real implementation."""
+    import search_engine_faiss
+    import faiss
+    import pickle
+    
+    # Create valid FAISS index
+    model = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    index = faiss.IndexFlatIP(model.dimension)
+    index_path = test_output_dir / "invalid_meta.faiss"
+    faiss.write_index(index, str(index_path))
+    
+    # Create metadata with invalid structure (missing required keys)
+    invalid_metadata = {"incomplete": "structure"}
+    metadata_path = test_output_dir / "invalid_meta.pkl"
+    with open(metadata_path, 'wb') as f:
+        pickle.dump(invalid_metadata, f)
+    
+    engine = search_engine_faiss.FaissSearchEngine(
+        "invalid_meta", test_output_dir, test_model_name, device=test_device
+    )
+    
+    with pytest.raises(ValueError, match="Invalid metadata structure"):
+        engine.initialize()
+    
+    model.cleanup()
+
+def test_search_for_chunks_normalization_and_invalid_ids_real(test_model_name, test_device, test_output_dir):
+    """Test chunk search with IP normalization and invalid IDs using real implementation."""
+    import search_engine_faiss
+    import faiss
+    import numpy as np
+    import pickle
+    
+    # Create real model and index
+    model = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    index = faiss.IndexFlatIP(model.dimension)
+    
+    # Add some real vectors
+    test_texts = ["hello world", "machine learning", "python programming"]
+    vectors = model.encode(test_texts)
+    
+    # Normalize vectors for IP similarity
+    faiss.normalize_L2(vectors)
+    index.add(vectors)
+    
+    # Create metadata with some invalid vector IDs
+    metadata = {
+        "vector_mapping": {
+            0: {"doc_id": 0, "chunk_index": 0},
+            1: {"doc_id": 1, "chunk_index": 0},
+            2: {"doc_id": 2, "chunk_index": 0},
+            999: {"doc_id": 999, "chunk_index": 0}  # Invalid ID that doesn't exist in index
+        },
+        "documents": {
+            0: {"name": "doc0", "content": "hello world"},
+            1: {"name": "doc1", "content": "machine learning"},
+            2: {"name": "doc2", "content": "python programming"}
+        },
+        "config": {"model_name": test_model_name, "dimension": model.dimension}
+    }
+    
+    # Save index and metadata
+    index_path = test_output_dir / "norm_test.faiss"
+    metadata_path = test_output_dir / "norm_test.pkl"
+    faiss.write_index(index, str(index_path))
+    with open(metadata_path, 'wb') as f:
+        pickle.dump(metadata, f)
+    
+    # Initialize engine
+    engine = search_engine_faiss.FaissSearchEngine(
+        "norm_test", test_output_dir, test_model_name, device=test_device
+    )
+    engine.initialize()
+    
+    # Test search with normalization
+    results = engine.search_for_chunks("programming", top_k=3)
+    
+    # Should get valid results despite invalid IDs in metadata
+    assert len(results) <= 3
+    for chunk in results:
+        assert hasattr(chunk, 'content')
+        assert hasattr(chunk, 'metadata')
+        assert 'score' in chunk.metadata
+        # Scores should be normalized (between -1 and 1 for IP)
+        assert -1.0 <= chunk.metadata['score'] <= 1.0
+    
+    engine.cleanup()
+    model.cleanup()
