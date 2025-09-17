@@ -26,15 +26,15 @@ RUN mkdir -p /root/.cache/huggingface
 RUN python download_models.py
 
 # Copy application source files
-COPY ../bm25_search.py .
-COPY ../document_cache.py .
 COPY ../models.py .
-COPY ../search_tools.py .
 COPY ../server.py .
-COPY ../vector_search.py .
+COPY ../search_engine_faiss.py .
 
 # Create docs directory for documentation
 RUN mkdir -p /app/docs
+
+# Copy pre-built embeddings
+COPY ../embeddings /app/embeddings
 
 # Expose port 8008 (as specified in the command)
 EXPOSE 8008
@@ -44,4 +44,4 @@ ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
 # Default command (can be overridden in docker-compose)
-CMD ["python", "server.py", "--transport", "http", "--host", "0.0.0.0", "--port", "8008", "-n", "logzilla-docs-server", "--description", "logzilla documentation"]
+CMD ["python", "server.py", "--transport", "http", "--host", "0.0.0.0", "--port", "8008", "--server-name", "logzilla-docs-server", "--description", "logzilla documentation", "--embedding-path", "/app/embeddings", "--embedding-name", "logzilla_md_docs"]

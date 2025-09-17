@@ -19,9 +19,10 @@ from pathlib import Path
 import pickle
 import re
 from sentence_transformers import SentenceTransformer
+import sys
+import tiktoken
 import time
 from typing import Dict, List, Optional, Union
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,8 +30,9 @@ logger = logging.getLogger(__name__)
 
 class Constants:
     DEFAULT_SENTENCE_TRANSFORMER_MODEL = "thenlper/gte-large"
-    DEFAULT_CHUNK_SIZE = 800
-    DEFAULT_CHUNK_OVERLAP = 150
+    DEFAULT_CHUNK_SIZE = 512  # in tokens
+    DEFAULT_CHUNK_OVERLAP = 50  # in tokens (10% overlap)
+    DEFAULT_ENCODING = "cl100k_base"  # GPT-4 encoding
 
 
 class DocumentIndexBuilder:
@@ -40,20 +42,27 @@ class DocumentIndexBuilder:
                  model_name: str = Constants.DEFAULT_SENTENCE_TRANSFORMER_MODEL,
                  chunk_size: int = Constants.DEFAULT_CHUNK_SIZE,
                  overlap: int = Constants.DEFAULT_CHUNK_OVERLAP,
-                 device: str = "auto"):
+                 device: str = "auto",
+                 encoding_name: str = Constants.DEFAULT_ENCODING):
         """
         Initialize the index builder
         
         Args:
             model_name: Sentence transformer model to use
-            chunk_size: Size of text chunks in characters
-            overlap: Overlap between chunks in characters
+            chunk_size: Size of text chunks in tokens
+            overlap: Overlap between chunks in tokens
             device: Device for model inference ("cpu", "cuda", "mps", "auto")
+            encoding_name: Tokenizer encoding to use (e.g., "cl100k_base")
         """
         self.model_name = model_name
         self.chunk_size = chunk_size
         self.overlap = overlap
         self.device = device
+        self.encoding_name = encoding_name
+        
+        # Initialize tokenizer if available
+        self.tokenizer = tiktoken.get_encoding(encoding_name)
+        logger.info(f"Using tiktoken tokenizer: {encoding_name}")
         
         # Initialize model
         actual_device = None if device == "auto" else device
@@ -62,7 +71,7 @@ class DocumentIndexBuilder:
         
         logger.info(f"Initialized builder with model: {model_name}")
         logger.info(f"Embedding dimension: {self.dimension}")
-        logger.info(f"Chunk size: {chunk_size}, overlap: {overlap}")
+        logger.info(f"Chunk size: {chunk_size} tokens, overlap: {overlap} tokens")
     
     def clean_html_content(self, html_content: str) -> str:
         """Intelligently extract valuable content from HTML
@@ -97,41 +106,172 @@ class DocumentIndexBuilder:
         
         return str(soup)
 
+    def _split_by_structure(self, text: str) -> List[str]:
+        """
+        Split text by structural elements (paragraphs, headings) first
+        """
+        # Split by double newlines (paragraphs)
+        paragraphs = re.split(r'\n\s*\n', text)
+        
+        # Further split very long paragraphs by single newlines
+        sections = []
+        for para in paragraphs:
+            p = para.strip()
+            if not p:
+                continue
+            if self._count_tokens(p) > self.chunk_size * 2:  # Use token-based threshold
+                # Split by sentences or newlines
+                sentences = re.split(r'(?<=[.!?])\s+|\n', p)
+                for s in sentences:
+                    s = s.strip()
+                    if s:
+                        sections.append(s)
+            else:
+                sections.append(p)
+        
+        return [s for s in sections if s]
+    
+    def _count_tokens(self, text: str) -> int:
+        """
+        Count tokens in text using tiktoken or estimate from characters
+        """
+        return len(self.tokenizer.encode(text))
+    
+    def _last_tokens(self, text: str, n: int) -> str:
+        """Get the last n tokens from text as a string"""
+        ids = self.tokenizer.encode(text)
+        if not ids: 
+            return ""
+        tail = ids[-n:]
+        return self.tokenizer.decode(tail)
+    
+    def _split_sentence_by_tokens(self, text: str, max_tokens: int) -> List[str]:
+        """Split a sentence into parts that fit within max_tokens"""
+        if not text.strip():
+            return []
+        
+        tokens = self.tokenizer.encode(text)
+        if len(tokens) <= max_tokens:
+            return [text]
+        
+        parts = []
+        start = 0
+        
+        while start < len(tokens):
+            end = min(start + max_tokens, len(tokens))
+            chunk_tokens = tokens[start:end]
+            chunk_text = self.tokenizer.decode(chunk_tokens)
+            parts.append(chunk_text)
+            start = end
+        
+        return parts
+    
+    def _create_chunk(self, text: str, doc_id: int, chunk_index: int) -> Dict:
+        """Helper to reduce repetition in chunk creation"""
+        return {
+            'text': text,
+            'token_count': self._count_tokens(text),
+            'chunk_index': chunk_index,
+            'doc_id': doc_id
+        }
+    
+    def _process_large_section(self, section: str, chunks: List[Dict], doc_id: int) -> None:
+        """Process sections that are too large for a single chunk"""
+        # Split large section by sentences first
+        sentences = re.split(r'(?<=[.!?])\s+', section)
+        current_chunk_text = ""
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # Handle sentences that are too large for any chunk by splitting them
+            if self._count_tokens(sentence) > self.chunk_size:
+                # Save current chunk if it has content
+                if current_chunk_text:
+                    chunks.append(self._create_chunk(current_chunk_text, doc_id, len(chunks)))
+                    overlap = self._last_tokens(current_chunk_text, self.overlap) if self.overlap > 0 else ""
+                    current_chunk_text = overlap
+                
+                # Split the sentence into token-sized pieces
+                sentence_parts = self._split_sentence_by_tokens(sentence, self.chunk_size)
+                for part in sentence_parts:
+                    # If adding this part would exceed chunk size, save current chunk first
+                    test_text = (current_chunk_text + "\n\n" + part) if current_chunk_text else part
+                    if self._count_tokens(test_text) > self.chunk_size and current_chunk_text:
+                        chunks.append(self._create_chunk(current_chunk_text, doc_id, len(chunks)))
+                        overlap = self._last_tokens(current_chunk_text, self.overlap) if self.overlap > 0 else ""
+                        current_chunk_text = (overlap + "\n\n" + part) if overlap else part
+                    else:
+                        current_chunk_text = test_text
+            else:
+                # Normal sentence processing
+                test_text = (current_chunk_text + "\n\n" + sentence) if current_chunk_text else sentence
+                if self._count_tokens(test_text) <= self.chunk_size:
+                    current_chunk_text = test_text
+                else:
+                    # Current chunk is full, save it and start new one
+                    chunks.append(self._create_chunk(current_chunk_text, doc_id, len(chunks)))
+                    overlap = self._last_tokens(current_chunk_text, self.overlap) if self.overlap > 0 else ""
+                    current_chunk_text = (overlap + "\n\n" + sentence) if overlap else sentence
+        
+        # Save any remaining content
+        if current_chunk_text:
+            chunks.append(self._create_chunk(current_chunk_text, doc_id, len(chunks)))
+
+    def _token_aware_chunk(self, sections: List[str], doc_id: int) -> List[Dict]:
+        """
+        Create chunks respecting token limits and semantic boundaries with token-accurate overlap
+        """
+        chunks = []
+        current_chunk_text = ""
+        
+        for section in sections:
+            # Handle sections that are too large on their own
+            if self._count_tokens(section) > self.chunk_size:
+                # If there's a pending chunk, save it first
+                if current_chunk_text:
+                    chunks.append(self._create_chunk(current_chunk_text, doc_id, len(chunks)))
+                    # Start the next chunk with overlap from the one we just saved
+                    overlap = self._last_tokens(current_chunk_text, self.overlap) if self.overlap > 0 else ""
+                    current_chunk_text = overlap
+                
+                # Now, process the oversized section
+                self._process_large_section(section, chunks, doc_id)
+                current_chunk_text = ""  # Reset after processing
+                continue
+
+            # If adding the next section fits, append it
+            test_text = (current_chunk_text + "\n\n" + section) if current_chunk_text else section
+            if self._count_tokens(test_text) <= self.chunk_size:
+                current_chunk_text = test_text
+            # Otherwise, the current chunk is full. Save it and start a new one.
+            else:
+                chunks.append(self._create_chunk(current_chunk_text, doc_id, len(chunks)))
+                overlap = self._last_tokens(current_chunk_text, self.overlap) if self.overlap > 0 else ""
+                current_chunk_text = (overlap + "\n\n" + section) if overlap else section
+
+        # Add the final pending chunk
+        if current_chunk_text:
+            chunks.append(self._create_chunk(current_chunk_text, doc_id, len(chunks)))
+
+        return chunks
+    
     def chunk_document(self, text: str, doc_id: int) -> List[Dict]:
         """
-        Split document into overlapping chunks
+        Split document into overlapping chunks using token-aware semantic boundaries
         
         Returns list of chunk dictionaries with metadata
         """
-        chunks = []
-        start = 0
-        chunk_index = 0
+        if not text.strip():
+            return []
         
-        while start < len(text):
-            end = min(start + self.chunk_size, len(text))
-            
-            # Try to break at sentence boundaries
-            if end < len(text):
-                # Look for sentence endings within the last 100 characters
-                last_period = text.rfind('.', start + self.chunk_size - 100, end)
-                if last_period > start + self.chunk_size * 0.7:  # Don't make chunks too small
-                    end = last_period + 1
-            
-            chunk_text = text[start:end].strip()
-            if chunk_text:  # Only add non-empty chunks
-                chunks.append({
-                    'text': chunk_text,
-                    'start_pos': start,
-                    'end_pos': end,
-                    'chunk_index': chunk_index,
-                    'doc_id': doc_id
-                })
-                chunk_index += 1
-            
-            if end >= len(text):
-                break
-                
-            start += self.chunk_size - self.overlap
+        # First, split by structural elements
+        sections = self._split_by_structure(text)
+        
+        # Then create token-aware chunks
+        chunks = self._token_aware_chunk(sections, doc_id)
         
         return chunks
     
@@ -169,7 +309,7 @@ class DocumentIndexBuilder:
                             'content': content,
                             # no metadata for now
                             'metadata': {},
-                            'updated_at': datetime.fromtimestamp(file_path.stat().st_mtime)
+                            'updated_at': datetime.fromtimestamp(file_path.stat().st_mtime).isoformat()
                         })
                         doc_id += 1
                         
@@ -207,7 +347,7 @@ class DocumentIndexBuilder:
                 'size': len(doc['content']),
                 'content': doc['content'],
                 'metadata': doc.get('metadata', {}),
-                'updated_at': doc.get('updated_at', datetime.now())
+                'updated_at': doc.get('updated_at', datetime.now()).isoformat() if isinstance(doc.get('updated_at'), datetime) else doc.get('updated_at', datetime.now().isoformat())
             }
             processed_docs.append(processed_doc)
         
@@ -270,24 +410,21 @@ class DocumentIndexBuilder:
         
         logger.info(f"Created {len(all_chunks)} chunks from {len(documents)} documents")
         
+        # Guard against empty chunks
+        if not all_chunks:
+            raise ValueError("No chunks were produced from the input documents; check cleaners/filters.")
+        
         # Create embeddings
         logger.info("Creating embeddings...")
         start_time = time.time()
         
-        # Process in batches to avoid memory issues
-        batch_size = 32
-        all_embeddings = []
-        
-        for i in range(0, len(all_chunks), batch_size):
-            batch = all_chunks[i:i + batch_size]
-            batch_embeddings = self.model.encode(batch, convert_to_numpy=True, show_progress_bar=True)
-            all_embeddings.append(batch_embeddings)
-            
-            if (i // batch_size + 1) % 10 == 0:
-                logger.info(f"Processed {i + len(batch)}/{len(all_chunks)} chunks")
-        
-        # Combine all embeddings
-        embeddings = np.vstack(all_embeddings).astype(np.float32)
+        # Use SentenceTransformer's built-in batching instead of manual batching
+        embeddings = self.model.encode(
+            all_chunks, 
+            convert_to_numpy=True, 
+            show_progress_bar=True, 
+            batch_size=32
+        ).astype(np.float32)
         embedding_time = time.time() - start_time
         logger.info(f"Created embeddings in {embedding_time:.2f} seconds")
         
@@ -316,7 +453,7 @@ class DocumentIndexBuilder:
                 'overlap': self.overlap,
                 'total_vectors': len(all_chunks),
                 'total_documents': len(documents),
-                'created_at': datetime.now(),
+                'created_at': datetime.now().isoformat(),
                 'index_type': 'IndexFlatIP'
             }
         }
@@ -391,14 +528,14 @@ Supported file formats: .txt, .md, .text, .html"""
         "--chunk-size",
         type=int,
         default=Constants.DEFAULT_CHUNK_SIZE,
-        help=f"Size of text chunks in characters (default: {Constants.DEFAULT_CHUNK_SIZE})"
+        help=f"Size of text chunks in tokens (default: {Constants.DEFAULT_CHUNK_SIZE})"
     )
     
     parser.add_argument(
         "--overlap",
         type=int,
         default=Constants.DEFAULT_CHUNK_OVERLAP,
-        help=f"Overlap between chunks in characters (default: {Constants.DEFAULT_CHUNK_OVERLAP})"
+        help=f"Overlap between chunks in tokens (default: {Constants.DEFAULT_CHUNK_OVERLAP})"
     )
     
     parser.add_argument(
@@ -443,7 +580,7 @@ def main() -> int:
         
         if not documents:
             logger.error(f"No supported documents found in {args.input_directory}")
-            logger.info("Supported file extensions: .txt, .md, .text")
+            logger.info("Supported file extensions: .txt, .md, .text, .htm, .html")
             return 1
         
         # Build the index
@@ -454,7 +591,7 @@ def main() -> int:
         print(f"Files created:")
         print(f"  - Index: {Path(args.output_directory) / f'{args.index_name}.faiss'}")
         print(f"  - Metadata: {Path(args.output_directory) / f'{args.index_name}.pkl'}")
-        print(f"\nYou can now use these files with your FaissSearchEngine:")
+        print(f"\nThese files can now be used with FAISS search in the MCP Docs Server:")
         print(f"  - embedding_path: '{args.output_directory}'")
         print(f"  - embedding_name: '{args.index_name}'")
         

@@ -11,8 +11,10 @@ services:
       - ../logzilla-docs:/app/docs:ro
       # Optional: Mount logs directory
       - ./logs:/app/logs
+      # Mount embeddings directory for persistence
+      - ../embeddings:/app/embeddings:rw
       # Optional: Mount model cache to persist models between container rebuilds
-      # - ./model_cache:/root/.cache/huggingface:rw
+      - ./model_cache:/root/.cache/huggingface:rw
     environment:
       # MCP server configuration
       - MCP_TRANSPORT=http
@@ -20,9 +22,11 @@ services:
       - MCP_PORT=8008
       - MCP_SERVER_NAME=logzilla-docs-server
       - MCP_DESCRIPTION=logzilla documentation
-      # Optional: Additional MCP settings
-      - MCP_DOCS_PATH=/app/docs
-      - MCP_DEVICE=auto
+      # Model and embedding settings
+      - MCP_MODEL_NAME=thenlper/gte-large
+      - MCP_EMBEDDING_PATH=/app/embeddings
+      - MCP_TRANSFORMER_DEVICE=auto
+      - MCP_EMBEDDING_NAME=docs_embeddings
 
       # - MCP_SSL_CERT_PATH=
       # - MCP_SSL_KEY_PATH=
@@ -30,6 +34,13 @@ services:
       - PYTHONUNBUFFERED=1
     command: >
       python server.py 
+      --transport http 
+      --host 0.0.0.0 
+      --port 8008 
+      --server-name logzilla-docs-server 
+      --description "logzilla documentation"
+      --embedding-path /app/embeddings
+      --embedding-name logzilla_md_docs 
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8008/help"]

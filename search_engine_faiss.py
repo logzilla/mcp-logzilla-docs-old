@@ -90,9 +90,8 @@ class ModelSentenceTransformer:
         """Clean up the ModelSentenceTransformer model to prevent memory issues"""
         if hasattr(self, '_model') and self._model is not None:
             try:
-                # Clear PyTorch cache if available
-                if hasattr(self._model, 'eval'):
-                    self._model.eval()
+                # Note: .eval() is not needed for SentenceTransformer models
+                # as they are not raw nn.Module instances
                 # Delete the model
                 del self._model
                 self._model = None
@@ -126,8 +125,8 @@ class FaissSearchEngine(SearchEngine):
                  model_name: str, 
                  device: str = "auto"):
         self._is_ready = False
-        self._index_path = f"{Path(embedding_path)}/{embedding_name}.faiss" # must be .faiss format
-        self._metadata_file = f"{Path(embedding_path)}/{embedding_name}.pkl" # must be in pickle format
+        self._index_path = Path(embedding_path) / f"{embedding_name}.faiss" # must be .faiss format
+        self._metadata_file = Path(embedding_path) / f"{embedding_name}.pkl" # must be in pickle format
         self._metadata = None
         self._model_name = model_name
         self._device = device
@@ -151,8 +150,8 @@ class FaissSearchEngine(SearchEngine):
             # load model
             self._sentence_transformer = ModelSentenceTransformer(self._model_name, self._device)
             
-            # read index
-            self._index = faiss.read_index(self._index_path)
+            # read index - convert Path to string for FAISS compatibility
+            self._index = faiss.read_index(str(self._index_path))
             logger.info(f"Successfully loaded FAISS index with {self._index.ntotal} vectors")
 
             # validate embedding dimension compatibility
@@ -176,26 +175,46 @@ class FaissSearchEngine(SearchEngine):
             self._is_ready = False
             raise
     
+    def _should_normalize_query(self) -> bool:
+        """Determine if query should be normalized based on index type"""
+        # Check metric_type attribute first
+        metric_type = getattr(self._index, 'metric_type', None)
+        if metric_type == faiss.METRIC_INNER_PRODUCT:
+            return True
+        
+        # Fallback to metadata config
+        try:
+            if self._metadata.get('config', {}).get('index_type') == 'IndexFlatIP':
+                return True
+        except Exception:
+            pass
+        
+        # Final fallback: class name check
+        try:
+            class_name = self._index.__class__.__name__
+            return class_name in {'IndexFlatIP', 'IndexIVFFlat'} and metric_type in (None, faiss.METRIC_INNER_PRODUCT)
+        except Exception:
+            return False
+    
     def _search_for_chunks_internal(self, query_text: str, top_k: int = 10) -> List[DocumentChunk]:
         """Search for chunks of documents matching the query"""
         query_vector = self._sentence_transformer.encode([query_text]).astype('float32')
         
         # Normalize query for inner-product (cosine similarity) indices
-        try:
-            metric_type = getattr(self._index, 'metric_type', None)
-            if metric_type == faiss.METRIC_INNER_PRODUCT:
-                faiss.normalize_L2(query_vector)
-        except Exception as e:
-            logger.debug(f"Query normalization skipped due to error: {e}")
+        if self._should_normalize_query():
+            faiss.normalize_L2(query_vector)
+        
+        # Cap top_k to available vectors for safety
+        safe_top_k = min(top_k, self._index.ntotal)
         
         # Search
-        scores, vector_ids = self._index.search(query_vector, top_k)
+        scores, vector_ids = self._index.search(query_vector, safe_top_k)
         
         # Get results with bounds checking
         results = []
         for score, vector_id in zip(scores[0], vector_ids[0]):
             # Skip invalid vector IDs (FAISS returns -1 for not found)
-            if vector_id < 0 or vector_id >= len(self._metadata['vector_mapping']):
+            if vector_id < 0 or vector_id not in self._metadata['vector_mapping']:
                 continue
                 
             try:
@@ -203,10 +222,14 @@ class FaissSearchEngine(SearchEngine):
                 doc = self._metadata['documents'][mapping['doc_id']]
                 chunk_text = doc['chunks'][mapping['chunk_index']]
                 
-                # Convert FAISS distance to similarity score if needed
-                # For L2 distance, convert to similarity (lower distance = higher similarity)
+                # Convert FAISS distance to similarity score
                 similarity_score = float(score)
-                if hasattr(self._index, 'metric_type') and self._index.metric_type == faiss.METRIC_L2:
+                
+                if self._should_normalize_query():  # IP/cosine similarity case
+                    # For IP on normalized vectors, score is cosine similarity in [-1,1]
+                    # Map to friendlier [0,1] range: (x+1)/2
+                    similarity_score = (similarity_score + 1.0) / 2.0
+                elif hasattr(self._index, 'metric_type') and self._index.metric_type == faiss.METRIC_L2:
                     # Convert L2 distance to similarity score (inverse relationship)
                     similarity_score = 1.0 / (1.0 + float(score))
                 
@@ -226,9 +249,12 @@ class FaissSearchEngine(SearchEngine):
         return self._search_for_chunks_internal(query_text, top_k)
     
     def search_for_documents(self, query_text: str, top_k: int = 10) -> List[Document]:
+        # Cap top_k to available documents for safety
+        safe_top_k = min(top_k, len(self._metadata.get('documents', {})))
+        
         chunks = self._search_for_chunks_internal(\
             query_text, 
-            top_k * self._calculate_document_search_result_multiplier(self._metadata))
+            safe_top_k * self._calculate_document_search_result_multiplier(self._metadata))
         
         # sort chunks by score (higher similarity = better)
         chunks.sort(key=lambda x: x.metadata.get('score', 0), reverse=True)
@@ -247,6 +273,15 @@ class FaissSearchEngine(SearchEngine):
         for doc_id in ordered_doc_ids[:top_k]:
             try:
                 doc_meta = documents_meta[doc_id]
+                
+                # Handle updated_at field - convert ISO string to datetime if needed
+                updated_at = doc_meta.get('updated_at')
+                if isinstance(updated_at, str):
+                    try:
+                        updated_at = datetime.fromisoformat(updated_at)
+                    except (ValueError, TypeError):
+                        updated_at = None
+                
                 results.append(
                     Document(
                         id=doc_meta['id'],
@@ -254,7 +289,7 @@ class FaissSearchEngine(SearchEngine):
                         size=doc_meta['size'],
                         content=doc_meta.get('content', ''),
                         metadata=doc_meta.get('metadata', {}),
-                        updated_at=doc_meta.get('updated_at')
+                        updated_at=updated_at
                     )
                 )
             except Exception as e:
@@ -273,6 +308,10 @@ class FaissSearchEngine(SearchEngine):
         """
         total_chunks = len(metadata['vector_mapping'])
         total_docs = len(metadata['documents'])
+        
+        # Guard against division by zero
+        if total_docs == 0:
+            return 1
         
         avg_chunks_per_doc = total_chunks / total_docs
         
@@ -322,8 +361,8 @@ class FaissSearchEngine(SearchEngine):
             self._cleanup_faiss_index()
             self._cleanup_sentence_transformer()
             
-            # Clear chunks
-            if hasattr(self, 'chunks'):
+            # Clear chunks if they exist
+            if hasattr(self, 'chunks') and self.chunks is not None:
                 self.chunks.clear()
                 
             # Force garbage collection

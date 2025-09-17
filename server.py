@@ -28,9 +28,10 @@ from pathlib import Path
 from pydantic import BaseModel, Field, AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import sys
-from typing import Any, Dict, List, Optional, Union, Annotated
+from typing import Any, Dict, List, Optional, Union, Annotated, Callable, Tuple, Type
 
 from search_engine_faiss import FaissSearchEngine
+from models import Document, DocumentChunk
 
 # Load environment variables
 load_dotenv()
@@ -52,9 +53,10 @@ except ImportError:
 
 
 class DEFAULTS:
-    MODEL_NAME = "thenlper/gte-large"
-    EMBEDDING_PATH = "./embeddings"
-    DEVICE = "auto"
+    """Default configuration values with type annotations."""
+    MODEL_NAME: str = "thenlper/gte-large"
+    EMBEDDING_PATH: str = "./embeddings"
+    DEVICE: str = "auto"
     
 # Configure logging following reference pattern
 def setup_logger() -> logging.Logger:
@@ -77,7 +79,7 @@ def setup_logger() -> logging.Logger:
     return logger
 
 
-logger = setup_logger()
+logger: logging.Logger = setup_logger()
 
 
 class ServerSettings(BaseSettings):
@@ -146,16 +148,18 @@ class ServerSettings(BaseSettings):
 
 class FastAppSettings:
     """Application settings for HTTP/HTTPS mode following reference pattern."""
-    def __init__(self, settings: ServerSettings, mcp_app: FastMCP):
-        self.expose_url = str(settings.server_url)
-        self.dns = None
-        self.settings = settings
-        self.servers = [mcp_app]  # Use the provided FastMCP app
+    
+    def __init__(self, settings: ServerSettings, mcp_app: FastMCP) -> None:
+        self.expose_url: str = str(settings.server_url)
+        self.dns: Optional[str] = None
+        self.settings: ServerSettings = settings
+        self.servers: List[FastMCP] = [mcp_app]  # Use the provided FastMCP app
 
 class FastApp:
     """FastAPI application for HTTP/HTTPS mode following reference pattern."""
-    def __init__(self, fast_app_settings):
-        self.app_settings = fast_app_settings
+    
+    def __init__(self, fast_app_settings: FastAppSettings) -> None:
+        self.app_settings: FastAppSettings = fast_app_settings
 
     def create_app(self) -> FastAPI:
         """Create FastAPI application with MCP server mounting."""
@@ -166,7 +170,7 @@ class FastApp:
 
         # Create a combined lifespan to manage session managers
         @contextlib.asynccontextmanager
-        async def lifespan(app: FastAPI):
+        async def lifespan(app: FastAPI) -> Any:
             async with contextlib.AsyncExitStack() as stack:
                 for server in servers:
                     await stack.enter_async_context(server.session_manager.run())
@@ -188,11 +192,11 @@ class FastApp:
             app.mount(f"/{server.name}", server.streamable_http_app())
 
         @app.get("/", include_in_schema=False)
-        async def redirect_to_help():
+        async def redirect_to_help() -> RedirectResponse:
             return RedirectResponse(url="/help")
 
         @app.get("/help", include_in_schema=False)
-        async def help():
+        async def help() -> HTMLResponse:
             """Generate help page with server information."""
             try:
                 help_text = """
@@ -237,16 +241,17 @@ class MCPServer:
     following MCP specification requirements.
     """
     
-    def __init__(self, settings: ServerSettings, device: str = "auto"):
-        self._settings = settings
-        self._device = device
-        self._search_engine = FaissSearchEngine(
+    def __init__(self, settings: ServerSettings, device: str = "auto") -> None:
+        self._settings: ServerSettings = settings
+        self._device: str = device
+        self._search_engine: FaissSearchEngine = FaissSearchEngine(
             settings.embedding_name, 
             settings.embedding_path, 
             settings.model_name, 
             settings.transformer_device)
-        self._is_ready = False
-        self._logger = logger
+        self._is_ready: bool = False
+        self._logger: logging.Logger = logger
+        self._initialization_error: Optional[str] = None
        
     def create_public_server(self) -> Optional[FastMCP]:
         """Create public documentation server following reference pattern."""
@@ -260,6 +265,8 @@ class MCPServer:
             )
             self._is_ready = True
         except Exception as e:
+            self._initialization_error = str(e)
+            logger.error(f"Failed to initialize search engine: {e}")
             logger.error(f"Failed to create FastMCP server: {e}")
             return None
 
@@ -281,18 +288,13 @@ class MCPServer:
                     }
                 
                 try:
-                    chunks = self._search_engine.search_for_chunks(
+                    chunks: List[DocumentChunk] = self._search_engine.search_for_chunks(
                         query=query,
                         top_k=top_k
                     )
                     return {
                         "status": "success",
-                        "chunks": [c.to_dict() if hasattr(c, 'to_dict') else {
-                            "document_id": getattr(c, 'document_id', None),
-                            "chunk_index": getattr(c, 'chunk_index', None),
-                            "content": getattr(c, 'content', None),
-                            "metadata": getattr(c, 'metadata', {}),
-                        } for c in chunks],
+                        "chunks": [c.to_dict() for c in chunks],
                         "query": query,
                         "total_chunks": len(chunks)
                     }
@@ -319,17 +321,10 @@ class MCPServer:
                 }
             
             try:
-                documents = self._search_engine.search_for_documents(query, top_k)
+                documents: List[Document] = self._search_engine.search_for_documents(query, top_k)
                 return {
                     "status": "success",
-                    "documents": [d.to_dict() if hasattr(d, 'to_dict') else {
-                        "id": getattr(d, 'id', None),
-                        "name": getattr(d, 'name', None),
-                        "size": getattr(d, 'size', None),
-                        "content": getattr(d, 'content', ''),
-                        "metadata": getattr(d, 'metadata', {}),
-                        "updated_at": getattr(d, 'updated_at', None),
-                    } for d in documents],
+                    "documents": [d.to_dict() for d in documents],
                     "query": query,
                     "total_documents": len(documents)
                 }
@@ -361,13 +356,15 @@ class MCPServer:
         
         return mcp
 
-    def run_stdio_server(self):
+    def run_stdio_server(self) -> None:
         """Run MCP server in stdio mode. Now synchronous since FastMCP handles async internally."""
         
         self._logger.debug("Step 7: Creating FastMCP server...")
         public_server = self.create_public_server()
         if public_server is None:
             self._logger.error("Failed to create public server")
+            if self._initialization_error:
+                raise Exception(self._initialization_error)
             return
         
         self._logger.debug("Step 8: Starting server in stdio mode...")
@@ -387,7 +384,7 @@ class MCPServer:
         except Exception as e:
             self._logger.error(f"Failed to run public server: {e}")
 
-    def run_http_server_with_mcp(self):
+    def run_http_server_with_mcp(self) -> int:
         """Run MCP server in HTTP mode following reference pattern."""
         
         self._logger.debug("Step 7: Creating FastMCP server...")
@@ -396,6 +393,8 @@ class MCPServer:
         public_app = self.create_public_server()
         if public_app is None:
             self._logger.error("Failed to create public server")
+            if self._initialization_error:
+                raise Exception(self._initialization_error)
             return 1
         
         self._logger.debug(f"Step 8: Starting server in {self._settings.transport.upper()} mode...")
@@ -405,7 +404,7 @@ class MCPServer:
         self._logger.debug("Step 9: HTTP/HTTPS server finished.")
         return 0
 
-    def run_http_server(self, mcp_app: FastMCP):
+    def run_http_server(self, mcp_app: FastMCP) -> None:
         """Run MCP server in HTTP/HTTPS mode following reference pattern."""
         if not FASTAPI_AVAILABLE:
             self._logger.error("FastAPI not available. Install with: pip install fastapi uvicorn")
@@ -443,15 +442,16 @@ class MCPServer:
             raise
 
 
-def main():
+def main() -> int:
     """Working FastMCP implementation with full server_new.py functionality."""
     import sys
+    logger.info("🚀 MCP Documentation Server initializing...")
     logger.debug("=== BUILD v3.0 - Non-blocking MCP Server with MCPServer class ===")
     
     logger.debug("Step 1: Parsing arguments...")
     
     # Enhanced argument parsing from server_new.py
-    parser = argparse.ArgumentParser(
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="MCP Documentation Server - A Model Context Protocol server for documentation search and retrieval",
         epilog="""
 Environment Variables:
@@ -489,7 +489,7 @@ Environment Variables:
     parser.add_argument("--device", type=str, choices=["cpu", "cuda", "mps", "auto", "none"], 
                        default=os.getenv("MCP_DEVICE", "auto"), 
                        help="Compute device for vector search: 'cpu' (CPU only), 'cuda' (NVIDIA GPU), 'mps' (Apple Silicon), 'auto' (auto-detect best), 'none' (disable vector search). Default: auto. Set via env var MCP_DEVICE.")
-    parser.add_argument("-n", "--name", type=str, 
+    parser.add_argument("-n", "--server-name", type=str, 
                        default=os.getenv("MCP_SERVER_NAME", "docs-server"),
                        help="Name identifier for the MCP server instance. Default: docs-server. Set via env var MCP_SERVER_NAME.")
     parser.add_argument("--description", type=str, 
@@ -504,7 +504,7 @@ Environment Variables:
     parser.add_argument("-e", "--embedding-name", type=str,
                        default=os.getenv("MCP_EMBEDDING_NAME", "docs_embeddings"),
                        help="Name identifier for embedding files. Default: docs_embeddings. Set via env var MCP_EMBEDDING_NAME.")
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
     
     logger.debug(f"Step 2: Args parsed - debug: {args.debug}, transport: {args.transport}")
     
@@ -520,7 +520,7 @@ Environment Variables:
     
 
     # Create settings object with all the advanced options
-    settings = ServerSettings(
+    settings: ServerSettings = ServerSettings(
         transport=args.transport,
         host=args.host,
         port=args.port,
@@ -528,7 +528,7 @@ Environment Variables:
         transformer_device=args.device,
         ssl_cert_path=args.ssl_cert,
         ssl_key_path=args.ssl_key,
-        server_name=args.name,
+        server_name=args.server_name,
         description=args.description,
         model_name=args.model,
         embedding_path=args.embedding_path,
@@ -540,17 +540,18 @@ Environment Variables:
     # Handle different transport modes using MCPServer class
     try:
         # Create MCP server instance
-        mcp_server = MCPServer(settings, device=args.device)
+        mcp_server: MCPServer = MCPServer(settings, device=args.device)
         
         if settings.transport == "stdio":
             # Call the stdio server directly
             mcp_server.run_stdio_server()
                 
         elif settings.transport in ["http", "https"]:
-            result = mcp_server.run_http_server_with_mcp()
+            result: int = mcp_server.run_http_server_with_mcp()
             return result
         else:
             logger.error(f"Unknown transport mode '{settings.transport}'")
+            parser.print_help()
             return 1
             
     except KeyboardInterrupt:
@@ -558,6 +559,12 @@ Environment Variables:
         return 0
     except Exception as e:
         logger.error(f"Server error: {e}")
+        # Show help when there's a server initialization error
+        if "FAISS index file not found" in str(e) or "Failed to initialize" in str(e):
+            print("\n" + "="*80)
+            print("HELP: Server initialization failed. Please check the following:")
+            print("="*80)
+            parser.print_help()
         return 1
     
     return 0
