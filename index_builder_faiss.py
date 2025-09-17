@@ -24,6 +24,10 @@ import tiktoken
 import time
 from typing import Dict, List, Optional, Union
 
+DEBUG = True
+if DEBUG:
+    import yaml
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -74,37 +78,179 @@ class DocumentIndexBuilder:
         logger.info(f"Chunk size: {chunk_size} tokens, overlap: {overlap} tokens")
     
     def clean_html_content(self, html_content: str) -> str:
-        """Intelligently extract valuable content from HTML
+        """General-purpose HTML cleaning for optimal LLM indexing
         
-        Benefits of preserving HTML-derived content over markdown for LLM indexing:
-        - Preserves semantic structure (h1/h2 hierarchy, section/article containers)
-        - Maintains link context and relationships (href, title attributes, anchor targets)
-        - Enables content classification (table structure, definition lists, figures)
-        - Retains essential metadata (id for anchors, alt text for images)
-        - Removes presentation noise (CSS classes, tracking attributes, style tags)
-        - Filters out navigation/UI elements while keeping content structure
+        Designed to work with any HTML content, not just specific frameworks.
+        Extracts semantic content while removing presentation markup and noise.
         """
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Remove noise elements
-        for element in soup(['script', 'style', 'nav', 'header', 'footer', 
-                            'aside', 'advertisement']):
-            element.decompose()
+        # Find main content using common patterns (fallback to body if none found)
+        main_content = None
+        content_selectors = [
+            'main', 'article', '[role="main"]',  # Semantic HTML5
+            '.content', '.main-content', '.post-content', '.entry-content',  # Common classes
+            '#content', '#main-content', '#post-content',  # Common IDs
+            'article.md-content__inner',  # Material/MkDocs
+            '.container .row .col',  # Bootstrap patterns
+        ]
         
-        # Remove elements with noise-indicating classes/IDs
-        noise_patterns = ['nav', 'menu', 'sidebar', 'footer', 'header', 
-                        'advertisement', 'social', 'share']
-        for pattern in noise_patterns:
-            for element in soup.find_all(attrs={'class': re.compile(pattern, re.I)}):
+        for selector in content_selectors:
+            main_content = soup.select_one(selector)
+            if main_content and len(main_content.get_text().strip()) > 100:  # Ensure substantial content
+                break
+        
+        if not main_content:
+            main_content = soup.find('body') or soup
+        
+        soup = BeautifulSoup(str(main_content), 'html.parser')
+        
+        # Remove noise elements that never contain useful content
+        noise_tags = ['script', 'style', 'noscript', 'iframe', 'embed', 'object', 
+                     'svg', 'canvas', 'audio', 'video', 'source', 'track']
+        for tag in noise_tags:
+            for element in soup.find_all(tag):
                 element.decompose()
         
-        # Preserve valuable structure but clean attributes
-        for tag in soup.find_all():
-            # Keep only semantic attributes
-            semantic_attrs = ['href', 'title', 'alt', 'id'] 
-            tag.attrs = {k: v for k, v in tag.attrs.items() if k in semantic_attrs}
+        # Remove navigation and UI elements by common patterns
+        ui_patterns = [
+            # Navigation
+            r'nav', r'menu', r'breadcrumb', r'pagination',
+            # Headers/Footers  
+            r'header', r'footer', r'banner',
+            # Sidebars
+            r'sidebar', r'aside', r'widget',
+            # Social/Sharing
+            r'social', r'share', r'follow', r'subscribe',
+            # Ads/Tracking
+            r'ad', r'advertisement', r'sponsor', r'tracking', r'analytics',
+            # UI Controls
+            r'button', r'control', r'toggle', r'dropdown', r'modal',
+            # Comments (often noisy)
+            r'comment', r'discussion'
+        ]
         
-        return str(soup)
+        for pattern in ui_patterns:
+            # Remove by class
+            for element in soup.find_all(attrs={'class': re.compile(pattern, re.I)}):
+                element.decompose()
+            # Remove by ID
+            for element in soup.find_all(attrs={'id': re.compile(pattern, re.I)}):
+                element.decompose()
+            # Remove by role
+            for element in soup.find_all(attrs={'role': re.compile(pattern, re.I)}):
+                element.decompose()
+        
+        # Convert semantic HTML to markdown-like format
+        # Headings
+        for i in range(1, 7):
+            for heading in soup.find_all(f'h{i}'):
+                text = heading.get_text().strip()
+                if text:
+                    heading.string = f"{'#' * i} {text}\n"
+                    heading.name = 'p'
+        
+        # Lists
+        for ul in soup.find_all('ul'):
+            items = []
+            for li in ul.find_all('li', recursive=False):  # Only direct children
+                item_text = li.get_text().strip()
+                if item_text:
+                    items.append(f"- {item_text}")
+            if items:
+                ul.string = '\n'.join(items) + '\n'
+                ul.name = 'p'
+        
+        for ol in soup.find_all('ol'):
+            items = []
+            for i, li in enumerate(ol.find_all('li', recursive=False), 1):
+                item_text = li.get_text().strip()
+                if item_text:
+                    items.append(f"{i}. {item_text}")
+            if items:
+                ol.string = '\n'.join(items) + '\n'
+                ol.name = 'p'
+        
+        # Tables - convert to simple text format
+        for table in soup.find_all('table'):
+            rows = []
+            for tr in table.find_all('tr'):
+                cells = [td.get_text().strip() for td in tr.find_all(['td', 'th'])]
+                if cells and any(cells):  # Skip empty rows
+                    rows.append(' | '.join(cells))
+            if rows:
+                table.string = '\n'.join(rows) + '\n'
+                table.name = 'p'
+        
+        # Links - preserve external, convert internal to text
+        for link in soup.find_all('a'):
+            href = link.get('href', '').strip()
+            text = link.get_text().strip()
+            
+            if not text:  # Skip empty links
+                link.decompose()
+                continue
+                
+            if href.startswith(('http://', 'https://')):
+                # Keep external links as markdown
+                link.string = f"[{text}]({href})"
+            elif href.startswith(('mailto:', 'tel:')):
+                # Keep contact links
+                link.string = f"[{text}]({href})"
+            else:
+                # Convert internal/relative links to plain text
+                link.string = text
+            link.name = 'span'
+        
+        # Emphasis
+        for strong in soup.find_all(['strong', 'b']):
+            text = strong.get_text().strip()
+            if text:
+                strong.string = f"**{text}**"
+            strong.name = 'span'
+        
+        for em in soup.find_all(['em', 'i']):
+            text = em.get_text().strip()
+            if text:
+                em.string = f"*{text}*"
+            em.name = 'span'
+        
+        # Code blocks
+        for code in soup.find_all(['code', 'pre']):
+            text = code.get_text().strip()
+            if text:
+                if '\n' in text:  # Multi-line code block
+                    code.string = f"```\n{text}\n```"
+                else:  # Inline code
+                    code.string = f"`{text}`"
+            code.name = 'span'
+        
+        # Remove remaining structural elements but preserve content
+        for tag in soup.find_all():
+            if tag.name not in ['p', 'span', 'br']:
+                tag.unwrap()
+        
+        # Convert to text and clean up
+        text = str(soup)
+        
+        # Remove HTML entities
+        import html
+        text = html.unescape(text)
+        
+        # Simple approach: just add space after every HTML tag removal
+        text = re.sub(r'<br\s*/?>', '\n', text)    # Convert <br> to newlines
+        text = re.sub(r'</?[^>]+>', ' ', text)     # Remove HTML tags and replace with space
+        
+        # Only fix obvious punctuation issues, avoid breaking proper nouns
+        text = re.sub(r'([.!?:;])([A-Z])', r'\1 \2', text)  # Space after punctuation before capitals
+        
+        # Normalize whitespace - but preserve newlines as spaces for word boundaries
+        text = re.sub(r'[ \t]+', ' ', text)                  # Collapse multiple spaces
+        text = re.sub(r'\n', ' ', text)                      # Convert ALL newlines to spaces to prevent compound words
+        text = re.sub(r'[ ]+', ' ', text)                    # Collapse multiple spaces again after newline conversion
+        text = re.sub(r'^\s+|\s+$', '', text)                # Trim start and end
+        
+        return text.strip()
 
     def _split_by_structure(self, text: str) -> List[str]:
         """
@@ -461,6 +607,9 @@ class DocumentIndexBuilder:
         # Save files
         index_file = output_dir / f"{index_name}.faiss"
         metadata_file = output_dir / f"{index_name}.pkl"
+        if DEBUG:
+            with open(f"{index_name}.yaml", "w") as f:
+                yaml.dump(metadata, f)
         
         logger.info(f"Saving FAISS index to {index_file}")
         faiss.write_index(index, str(index_file))
