@@ -76,6 +76,11 @@ class ModelSentenceTransformer:
             
         # Always return numpy array - sentence_transformers handles both single strings and lists
         embeddings = self._model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
+        
+        # Ensure consistent 2D shape: (batch_size, embedding_dim)
+        if embeddings.ndim == 1:
+            embeddings = embeddings.reshape(1, -1)
+            
         return embeddings.astype(np.float32)
     
     @property
@@ -200,6 +205,9 @@ class FaissSearchEngine(SearchEngine):
     
     def _search_for_chunks_internal(self, query_text: str, top_k: int = 10) -> List[DocumentChunk]:
         """Search for chunks of documents matching the query"""
+        if not self._is_ready or self._sentence_transformer is None:
+            raise ValueError("Search engine is not initialized. Call initialize() first.")
+            
         query_vector = self._sentence_transformer.encode([query_text]).astype('float32')
         
         # Normalize query for inner-product (cosine similarity) indices
@@ -248,9 +256,20 @@ class FaissSearchEngine(SearchEngine):
         return results
         
     def search_for_chunks(self, query_text: str, top_k: int = 10) -> List[DocumentChunk]:
+        # Return empty results for empty queries
+        if not query_text or not query_text.strip():
+            return []
         return self._search_for_chunks_internal(query_text, top_k)
     
     def search_for_documents(self, query_text: str, top_k: int = 10) -> List[Document]:
+        # Return empty results for empty queries
+        if not query_text or not query_text.strip():
+            return []
+            
+        # Check if engine is initialized
+        if not self._is_ready or self._metadata is None:
+            raise ValueError("Search engine is not initialized. Call initialize() first.")
+            
         # Cap top_k to available documents for safety
         safe_top_k = min(top_k, len(self._metadata.get('documents', {})))
         
@@ -362,6 +381,10 @@ class FaissSearchEngine(SearchEngine):
         try:
             self._cleanup_faiss_index()
             self._cleanup_sentence_transformer()
+            
+            # Clear metadata and reset ready state
+            self._metadata = None
+            self._is_ready = False
             
             # Clear chunks if they exist
             if hasattr(self, 'chunks') and self.chunks is not None:

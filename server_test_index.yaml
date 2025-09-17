@@ -1,0 +1,119 @@
+config:
+  chunk_size: 200
+  created_at: '2025-09-17T08:05:00.221835'
+  dimension: 384
+  index_type: IndexFlatIP
+  model_name: sentence-transformers/all-MiniLM-L6-v2
+  overlap: 30
+  total_documents: 3
+  total_vectors: 4
+documents:
+  0:
+    chunks:
+    - "# Python Basics\n\nPython is a high-level programming language known for its\
+      \ simplicity and readability.\n\n## Variables and Data Types\n- Strings: text\
+      \ data\n- Integers: whole numbers\n- Floats: decimal numbers\n- Lists: ordered\
+      \ collections\n- Dictionaries: key-value pairs\n\n## Functions\nFunctions are\
+      \ reusable blocks of code that perform specific tasks.\n\n```python\ndef greet(name):\n\
+      \    return f\"Hello, {name}!\"\n```\n\n## Control Flow\nPython supports if\
+      \ statements, loops, and exception handling."
+    content: "# Python Basics\n\nPython is a high-level programming language known\
+      \ for its simplicity and readability.\n\n## Variables and Data Types\n- Strings:\
+      \ text data\n- Integers: whole numbers\n- Floats: decimal numbers\n- Lists:\
+      \ ordered collections\n- Dictionaries: key-value pairs\n\n## Functions\nFunctions\
+      \ are reusable blocks of code that perform specific tasks.\n\n```python\ndef\
+      \ greet(name):\n    return f\"Hello, {name}!\"\n```\n\n## Control Flow\nPython\
+      \ supports if statements, loops, and exception handling.\n"
+    id: 0
+    metadata:
+      category: programming
+      difficulty: beginner
+    name: python_basics.md
+    size: 487
+    updated_at: '2024-01-01T00:00:00'
+  1:
+    chunks:
+    - "# Machine Learning Overview\n\nMachine learning is a subset of artificial intelligence\
+      \ that enables computers to learn and improve from experience.\n\n## Types of\
+      \ Machine Learning\n1. Supervised Learning: Learning with labeled data\n2. Unsupervised\
+      \ Learning: Finding patterns in unlabeled data  \n3. Reinforcement Learning:\
+      \ Learning through rewards and penalties\n\n## Common Algorithms\n- Linear Regression\n\
+      - Decision Trees\n- Neural Networks\n- Support Vector Machines\n- K-Means Clustering\n\
+      \n## Applications\nMachine learning is used in recommendation systems, image\
+      \ recognition, natural language processing, and autonomous vehicles."
+    content: "# Machine Learning Overview\n\nMachine learning is a subset of artificial\
+      \ intelligence that enables computers to learn and improve from experience.\n\
+      \n## Types of Machine Learning\n1. Supervised Learning: Learning with labeled\
+      \ data\n2. Unsupervised Learning: Finding patterns in unlabeled data  \n3. Reinforcement\
+      \ Learning: Learning through rewards and penalties\n\n## Common Algorithms\n\
+      - Linear Regression\n- Decision Trees\n- Neural Networks\n- Support Vector Machines\n\
+      - K-Means Clustering\n\n## Applications\nMachine learning is used in recommendation\
+      \ systems, image recognition, natural language processing, and autonomous vehicles.\n"
+    id: 1
+    metadata:
+      category: ai
+      difficulty: intermediate
+    name: machine_learning.md
+    size: 622
+    updated_at: '2024-01-01T00:00:00'
+  2:
+    chunks:
+    - "<!DOCTYPE html>\n<html>\n<head>\n    <title>Web Development Guide</title>\n\
+      </head>\n<body>\n    <header>\n        <h1>Modern Web Development</h1>\n   \
+      \     <nav>\n            <ul>\n                <li><a href=\"#frontend\">Frontend</a></li>\n\
+      \                <li><a href=\"#backend\">Backend</a></li>\n            </ul>\n\
+      \        </nav>\n    </header>\n\n<main>\n        <section id=\"frontend\">\n\
+      \            <h2>Frontend Technologies</h2>\n            <p>Frontend development\
+      \ involves creating user interfaces using:</p>\n            <ul>\n         \
+      \       <li><strong>HTML</strong>: Structure and content</li>\n            \
+      \    <li><strong>CSS</strong>: Styling and layout</li>\n                <li><strong>JavaScript</strong>:\
+      \ Interactivity and behavior</li>\n            </ul>"
+    - "strong>: Styling and layout</li>\n                <li><strong>JavaScript</strong>:\
+      \ Interactivity and behavior</li>\n            </ul>\n\n<h3>Popular Frameworks</h3>\n\
+      \            <ul>\n                <li>React</li>\n                <li>Vue.js</li>\n\
+      \                <li>Angular</li>\n            </ul>\n        </section>\n\n\
+      <section id=\"backend\">\n            <h2>Backend Development</h2>\n       \
+      \     <p>Backend development focuses on server-side logic, databases, and APIs.</p>\n\
+      \            <pre><code>\n# Example API endpoint\n@app.route('/api/users')\n\
+      def get_users():\n    return jsonify(users)\n            </code></pre>\n   \
+      \     </section>\n    </main>\n\n<footer>\n        <p>\xA9 2024 Web Development\
+      \ Guide</p>\n    </footer>\n</body>\n</html>"
+    content: "<!DOCTYPE html>\n<html>\n<head>\n    <title>Web Development Guide</title>\n\
+      </head>\n<body>\n    <header>\n        <h1>Modern Web Development</h1>\n   \
+      \     <nav>\n            <ul>\n                <li><a href=\"#frontend\">Frontend</a></li>\n\
+      \                <li><a href=\"#backend\">Backend</a></li>\n            </ul>\n\
+      \        </nav>\n    </header>\n    \n    <main>\n        <section id=\"frontend\"\
+      >\n            <h2>Frontend Technologies</h2>\n            <p>Frontend development\
+      \ involves creating user interfaces using:</p>\n            <ul>\n         \
+      \       <li><strong>HTML</strong>: Structure and content</li>\n            \
+      \    <li><strong>CSS</strong>: Styling and layout</li>\n                <li><strong>JavaScript</strong>:\
+      \ Interactivity and behavior</li>\n            </ul>\n            \n       \
+      \     <h3>Popular Frameworks</h3>\n            <ul>\n                <li>React</li>\n\
+      \                <li>Vue.js</li>\n                <li>Angular</li>\n       \
+      \     </ul>\n        </section>\n        \n        <section id=\"backend\">\n\
+      \            <h2>Backend Development</h2>\n            <p>Backend development\
+      \ focuses on server-side logic, databases, and APIs.</p>\n            <pre><code>\n\
+      # Example API endpoint\n@app.route('/api/users')\ndef get_users():\n    return\
+      \ jsonify(users)\n            </code></pre>\n        </section>\n    </main>\n\
+      \    \n    <footer>\n        <p>\xA9 2024 Web Development Guide</p>\n    </footer>\n\
+      </body>\n</html>"
+    id: 2
+    metadata:
+      category: web
+      difficulty: intermediate
+    name: web_development.html
+    size: 1392
+    updated_at: '2024-01-01T00:00:00'
+vector_mapping:
+  0:
+    chunk_index: 0
+    doc_id: 0
+  1:
+    chunk_index: 0
+    doc_id: 1
+  2:
+    chunk_index: 0
+    doc_id: 2
+  3:
+    chunk_index: 1
+    doc_id: 2

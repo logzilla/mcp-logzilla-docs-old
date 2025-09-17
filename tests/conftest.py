@@ -4,6 +4,21 @@ import types
 import numpy as np
 import pytest
 from pathlib import Path
+import os
+
+# Check if we're running real tests
+RUNNING_REAL_TESTS = any(
+    'real' in arg for arg in sys.argv
+) or os.getenv('PYTEST_REAL_TESTS', '').lower() == 'true'
+
+# If running real tests, load real fixtures
+if RUNNING_REAL_TESTS:
+    from test_config import (
+        ensure_test_directories, cleanup_test_directories, 
+        get_model_name, get_device, should_skip_slow_tests,
+        TEST_DATA_DIR, TEST_EMBEDDINGS_DIR, TEST_OUTPUT_DIR,
+        SAMPLE_DOCUMENTS
+    )
 
 # ---------------------------
 # Stub: tiktoken
@@ -227,3 +242,59 @@ def import_fresh(module_name: str):
 # Make import_fresh available globally to all test modules
 import builtins
 builtins.import_fresh = import_fresh
+
+# ---------------------------
+# Real test fixtures (when RUNNING_REAL_TESTS is True)
+# ---------------------------
+if RUNNING_REAL_TESTS:
+    @pytest.fixture(scope="session", autouse=True)
+    def setup_test_environment():
+        """Set up test environment with real directories and data."""
+        ensure_test_directories()
+        
+        # Create sample test documents
+        for doc in SAMPLE_DOCUMENTS:
+            doc_path = TEST_DATA_DIR / doc["name"]
+            doc_path.write_text(doc["content"], encoding="utf-8")
+        
+        yield
+        
+        # Cleanup after all tests
+        if not os.getenv("KEEP_TEST_DATA"):
+            cleanup_test_directories()
+
+    @pytest.fixture
+    def test_model_name():
+        """Get the model name for testing."""
+        return get_model_name()
+
+    @pytest.fixture  
+    def test_device():
+        """Get the device for testing."""
+        return get_device()
+
+    @pytest.fixture
+    def test_data_dir():
+        """Get the test data directory."""
+        return TEST_DATA_DIR
+
+    @pytest.fixture
+    def test_embeddings_dir():
+        """Get the test embeddings directory."""
+        return TEST_EMBEDDINGS_DIR
+
+    @pytest.fixture
+    def test_output_dir():
+        """Get the test output directory."""
+        return TEST_OUTPUT_DIR
+
+    @pytest.fixture
+    def sample_documents():
+        """Get sample documents for testing."""
+        return SAMPLE_DOCUMENTS
+
+    @pytest.fixture
+    def skip_if_slow():
+        """Skip test if slow tests should be skipped."""
+        if should_skip_slow_tests():
+            pytest.skip("Skipping slow test")

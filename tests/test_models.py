@@ -1,4 +1,5 @@
 # tests/test_models.py
+import pytest
 from pathlib import Path
 from datetime import datetime
 from models import DocumentChunk, Document

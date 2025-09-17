@@ -1,0 +1,78 @@
+/home/aaron/anaconda3/envs/logzilla_312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.12.4, pytest-8.3.5, pluggy-1.5.0 -- /home/aaron/anaconda3/envs/logzilla_312/bin/python
+cachedir: .pytest_cache
+rootdir: /home/aaron/Logzilla/Repo/mcp-docs
+configfile: pytest.ini
+plugins: anyio-4.9.0, allure-pytest-2.14.2, asyncio-1.0.0, dotenv-0.5.2, langsmith-0.3.42
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 44 items
+
+tests/test_models.py::test_document_chunk_to_dict PASSED                 [  2%]
+tests/test_models.py::test_document_from_file_and_to_dict PASSED         [  4%]
+tests/test_models.py::test_document_to_dict_with_datetime PASSED         [  6%]
+tests/test_index_builder_real.py::test_init_with_real_model PASSED       [  9%]
+tests/test_index_builder_real.py::test_clean_html_content_with_real_beautifulsoup PASSED [ 11%]
+tests/test_index_builder_real.py::test_token_aware_chunking_with_real_tokenizer PASSED [ 13%]
+tests/test_index_builder_real.py::test_load_documents_from_directory_real PASSED [ 15%]
+tests/test_index_builder_real.py::test_load_documents_from_list_real PASSED [ 18%]
+tests/test_index_builder_real.py::test_build_index_e2e_with_real_libraries PASSED [ 20%]
+tests/test_index_builder_real.py::test_build_index_validation_real PASSED [ 22%]
+tests/test_index_builder_real.py::test_cli_integration_real PASSED       [ 25%]
+tests/test_search_engine_real.py::test_model_sentence_transformer_real PASSED [ 27%]
+tests/test_search_engine_real.py::test_faiss_search_engine_initialize_real PASSED [ 29%]
+tests/test_search_engine_real.py::test_faiss_initialize_missing_files PASSED [ 31%]
+tests/test_search_engine_real.py::test_search_for_chunks_real PASSED     [ 34%]
+tests/test_search_engine_real.py::test_search_for_documents_real PASSED  [ 36%]
+tests/test_search_engine_real.py::test_search_empty_query_real PASSED    [ 38%]
+tests/test_search_engine_real.py::test_search_before_initialization PASSED [ 40%]
+tests/test_search_engine_real.py::test_result_multiplier_calculation_real PASSED [ 43%]
+tests/test_search_engine_real.py::test_normalization_logic_real PASSED   [ 45%]
+tests/test_search_engine_real.py::test_cleanup_real PASSED               [ 47%]
+tests/test_search_engine_real.py::test_end_to_end_search_accuracy PASSED [ 50%]
+tests/test_server_real.py::test_setup_logger_real PASSED                 [ 52%]
+tests/test_server_real.py::test_server_settings_validation_real PASSED   [ 54%]
+tests/test_server_real.py::test_mcp_server_initialization_real PASSED    [ 56%]
+tests/test_server_real.py::test_create_public_server_real PASSED         [ 59%]
+tests/test_server_real.py::test_search_tools_functionality_real PASSED   [ 61%]
+tests/test_server_real.py::test_health_check_tool_real PASSED            [ 63%]
+tests/test_server_real.py::test_server_settings_from_environment PASSED  [ 65%]
+tests/test_server_real.py::test_run_stdio_server_real PASSED             [ 68%]
+tests/test_server_real.py::test_main_function_real PASSED                [ 70%]
+tests/test_server_real.py::test_error_handling_missing_index PASSED      [ 72%]
+tests/test_server_real.py::test_concurrent_search_requests_real PASSED   [ 75%]
+tests/test_server_app_factory_real.py::test_fastapp_with_real_mcp_server PASSED [ 77%]
+tests/test_server_app_factory_real.py::test_fastapp_help_endpoint_content PASSED [ 79%]
+tests/test_server_app_factory_real.py::test_fastapp_mcp_route_mounting PASSED [ 81%]
+tests/test_server_app_factory_real.py::test_fastapp_settings_validation PASSED [ 84%]
+tests/test_server_app_factory_real.py::test_fastapp_integration_with_real_search PASSED [ 86%]
+tests/test_server_app_factory_real.py::test_fastapp_error_handling PASSED [ 88%]
+tests/test_integration_real.py::test_full_pipeline_real PASSED           [ 90%]
+tests/test_integration_real.py::test_server_integration_real PASSED      [ 93%]
+tests/test_integration_real.py::test_error_recovery_real PASSED          [ 95%]
+tests/test_integration_real.py::test_concurrent_access_real PASSED       [ 97%]
+tests/test_integration_real.py::test_memory_usage_real PASSED            [100%]
+
+======================== 44 passed in 109.08s (0:01:49) ========================
+Real Implementation Test Runner
+Model: sentence-transformers/all-MiniLM-L6-v2
+Device: cpu
+Category: all
+Skip slow tests: False
+
+============================================================
+Running: Real implementation tests
+Command: python -m pytest tests/test_models.py tests/test_index_builder_real.py tests/test_search_engine_real.py tests/test_server_real.py tests/test_server_app_factory_real.py tests/test_integration_real.py
+============================================================
+
+✅ Real implementation tests completed successfully
+
+🎉 All tests passed!
+
+To run specific test categories:
+  python run_real_tests.py --fast          # Skip slow tests
+  python run_real_tests.py --category unit # Unit tests only
+  python run_real_tests.py --verbose       # Detailed output
