@@ -1,0 +1,26 @@
+..........F...................                                           [100%]
+=================================== FAILURES ===================================
+___________________________ test_cli_main_happy_path ___________________________
+
+install_stubs = <module 'faiss'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x73410669b350>
+tmp_path = PosixPath('/tmp/pytest-of-aaron/pytest-3/test_cli_main_happy_path0')
+
+    def test_cli_main_happy_path(install_stubs, monkeypatch, tmp_path):
+        index_builder = import_fresh("index_builder_faiss")
+        # mock builder used by main()
+        from unittest.mock import Mock
+        fake_builder = Mock(spec=index_builder.DocumentIndexBuilder)
+        fake_builder.load_documents_from_directory.return_value = [{"id":0,"name":"n","size":1,"content":"c"}]
+        monkeypatch.setattr(index_builder, "DocumentIndexBuilder", Mock(return_value=fake_builder))
+        src = tmp_path / "src"
+        dst = tmp_path / "dst"
+        src.mkdir()
+        (src / "a.txt").write_text("x", encoding="utf-8")
+        argv = ["prog", "-i", str(src), "-o", str(dst), "-n", "name"]
+>       monkeypatch.setattr(sys, "argv", argv)
+E       NameError: name 'sys' is not defined. Did you forget to import 'sys'
+
+tests/test_index_builder_faiss.py:153: NameError
+=========================== short test summary info ============================
+FAILED tests/test_index_builder_faiss.py::test_cli_main_happy_path - NameErro...

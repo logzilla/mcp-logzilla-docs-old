@@ -223,3 +223,7 @@ def import_fresh(module_name: str):
     if module_name in sys.modules:
         del sys.modules[module_name]
     return __import__(module_name, fromlist=["*"])
+
+# Make import_fresh available globally to all test modules
+import builtins
+builtins.import_fresh = import_fresh

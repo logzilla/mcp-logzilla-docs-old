@@ -107,7 +107,8 @@ class DocumentIndexBuilder:
         
         # Remove noise elements that never contain useful content
         noise_tags = ['script', 'style', 'noscript', 'iframe', 'embed', 'object', 
-                     'svg', 'canvas', 'audio', 'video', 'source', 'track']
+                     'svg', 'canvas', 'audio', 'video', 'source', 'track',
+                     'header', 'footer', 'nav']  # Add structural elements that should be removed
         for tag in noise_tags:
             for element in soup.find_all(tag):
                 element.decompose()
@@ -481,6 +482,7 @@ class DocumentIndexBuilder:
         ]
         """
         processed_docs = []
+        doc_counter = 1  # Counter for unnamed documents
         
         for doc_id, doc in enumerate(documents):
             if 'content' not in doc or not doc['content'].strip():
@@ -489,13 +491,17 @@ class DocumentIndexBuilder:
             
             processed_doc = {
                 'id': doc_id,
-                'name': doc.get('name', f'document_{doc_id}'),
+                'name': doc.get('name', f'document_{doc_counter}'),
                 'size': len(doc['content']),
                 'content': doc['content'],
                 'metadata': doc.get('metadata', {}),
                 'updated_at': doc.get('updated_at', datetime.now()).isoformat() if isinstance(doc.get('updated_at'), datetime) else doc.get('updated_at', datetime.now().isoformat())
             }
             processed_docs.append(processed_doc)
+            
+            # Only increment counter if we used the default name
+            if 'name' not in doc:
+                doc_counter += 1
         
         logger.info(f"Processed {len(processed_docs)} documents from list")
         return processed_docs

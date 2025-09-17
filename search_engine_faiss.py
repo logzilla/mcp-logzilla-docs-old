@@ -181,6 +181,8 @@ class FaissSearchEngine(SearchEngine):
         metric_type = getattr(self._index, 'metric_type', None)
         if metric_type == faiss.METRIC_INNER_PRODUCT:
             return True
+        elif metric_type == faiss.METRIC_L2:
+            return False
         
         # Fallback to metadata config
         try:

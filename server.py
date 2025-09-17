@@ -189,7 +189,7 @@ class FastApp:
         
         # Mount each MCP server
         for server in servers:
-            app.mount(f"/{server.name}", server.streamable_http_app())
+            app.mount(f"/{server.name}/mcp", server.streamable_http_app())
 
         @app.get("/", include_in_schema=False)
         async def redirect_to_help() -> RedirectResponse:
