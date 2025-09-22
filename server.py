@@ -202,9 +202,10 @@ class FastApp:
         # (e.g., /mcp, /.well-known/*, /register) are exposed exactly
         # at those paths. This supports reverse proxies routing only
         # /mcp to this upstream.
+        # Mount each MCP server at its named path
         for server in servers:
-            app.mount("/", server.streamable_http_app())
-
+            app.mount(f"/{server.name}", server.streamable_http_app())
+            
         @app.get("/", include_in_schema=False)
         async def redirect_to_help() -> RedirectResponse:
             return RedirectResponse(url="/help")
