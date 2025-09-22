@@ -23,11 +23,13 @@ services:
       - MCP_SERVER_NAME=logzilla-docs-server
       - MCP_DESCRIPTION=logzilla documentation
       # Model and embedding settings
-      - MCP_MODEL_NAME=thenlper/gte-large
+      - MCP_MODEL=thenlper/gte-large
       - MCP_EMBEDDING_PATH=/app/embeddings
-      - MCP_TRANSFORMER_DEVICE=auto
-      - MCP_EMBEDDING_NAME=docs_embeddings
-
+      - MCP_ALIAS_FILE=/app/embeddings/index-aliases.yaml
+      - MCP_DEVICE=auto
+      - MCP_EMBEDDING_NAME=logzilla_md_docs
+      - MCP_DEFAULT_VERSION=latest
+      # Optional SSL settings (commented out)
       # - MCP_SSL_CERT_PATH=
       # - MCP_SSL_KEY_PATH=
       # Optional: Enable debug logging
@@ -39,8 +41,11 @@ services:
       --port 8008 
       --server-name logzilla-docs-server 
       --description "logzilla documentation"
+      --model thenlper/gte-large
       --embedding-path /app/embeddings
-      --embedding-name logzilla_md_docs 
+      --alias-file /app/embeddings/index-aliases.yaml
+      --device auto
+      --default-version latest 
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8008/help"]

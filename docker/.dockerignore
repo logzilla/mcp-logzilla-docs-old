@@ -40,8 +40,11 @@ docker-compose.yml
 .dockerignore
 
 # Test files
+tests/
 test_*.py
 *_test.py
 
 # Development files
 README.md
+.env
+.env.local

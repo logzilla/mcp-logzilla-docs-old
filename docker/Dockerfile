@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
-COPY ../requirements.txt .
+COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
@@ -26,15 +26,19 @@ RUN mkdir -p /root/.cache/huggingface
 RUN python download_models.py
 
 # Copy application source files
-COPY ../models.py .
-COPY ../server.py .
-COPY ../search_engine_faiss.py .
+COPY models.py .
+COPY server.py .
+COPY search_engine_faiss.py .
+COPY index_builder_faiss.py .
 
 # Create docs directory for documentation
 RUN mkdir -p /app/docs
 
-# Copy pre-built embeddings
-COPY ../embeddings /app/embeddings
+# Copy pre-built embeddings (only FAISS, metadata, and alias YAML)
+RUN mkdir -p /app/embeddings
+COPY embeddings/*.faiss /app/embeddings/
+COPY embeddings/*.pkl /app/embeddings/
+COPY embeddings/index-aliases.yaml /app/embeddings/
 
 # Expose port 8008 (as specified in the command)
 EXPOSE 8008
@@ -44,4 +48,4 @@ ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
 # Default command (can be overridden in docker-compose)
-CMD ["python", "server.py", "--transport", "http", "--host", "0.0.0.0", "--port", "8008", "--server-name", "logzilla-docs-server", "--description", "logzilla documentation", "--embedding-path", "/app/embeddings", "--embedding-name", "logzilla_md_docs"]
+CMD ["python", "server.py", "--transport", "http", "--host", "0.0.0.0", "--port", "8008", "--server-name", "logzilla-docs-server", "--description", "logzilla documentation", "--model", "thenlper/gte-large", "--embedding-path", "/app/embeddings", "--alias-file", "/app/embeddings/index-aliases.yaml", "--device", "auto", "--default-version", "latest"]

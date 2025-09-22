@@ -70,8 +70,10 @@ services:
       - ../logzilla-docs:/app/docs:ro
       # Optional: Mount logs directory
       - ./logs:/app/logs
+      # Mount embeddings directory for persistence
+      - ../embeddings:/app/embeddings:rw
       # Optional: Mount model cache to persist models between container rebuilds
-      # - ./model_cache:/root/.cache/huggingface:rw
+      - ./model_cache:/root/.cache/huggingface:rw
     environment:
       # MCP server configuration
       - MCP_TRANSPORT=http
@@ -79,13 +81,26 @@ services:
       - MCP_PORT=8008
       - MCP_SERVER_NAME=logzilla-docs-server
       - MCP_DESCRIPTION=logzilla documentation
-      # Optional: Additional MCP settings
-      - MCP_DOCS_PATH=/app/docs
+      # Model and embedding settings
+      - MCP_MODEL=thenlper/gte-large
+      - MCP_EMBEDDING_PATH=/app/embeddings
       - MCP_DEVICE=auto
+      - MCP_EMBEDDING_NAME=logzilla_md_docs
+      - MCP_DEFAULT_VERSION=latest
       # Optional: Enable debug logging
       - PYTHONUNBUFFERED=1
     command: >
       python server.py 
+      --transport http 
+      --host 0.0.0.0 
+      --port 8008 
+      --server-name logzilla-docs-server 
+      --description "logzilla documentation"
+      --model thenlper/gte-large
+      --embedding-path /app/embeddings
+      --embedding-name logzilla_md_docs
+      --device auto
+      --default-version latest 
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8008/help"]
@@ -105,9 +120,90 @@ networks:
 - **Port**: `8008` (bound to `127.0.0.1` only)
 - **Transport**: HTTP only
 - **Documentation**: Mounted from `../logzilla-docs` (read-only)
+- **Embeddings**: Mounted from `../embeddings` (read-write for persistence)
+- **Model Cache**: Mounted from `./model_cache` (read-write for model persistence)
+- **Embedding Model**: `thenlper/gte-large` (pre-downloaded during build)
+- **Device**: `auto` (automatically detects best compute device)
 - **Logs**: Stored in `./logs` directory
 - **Network**: Custom network `logzilla-docs-network`
 - **Health Check**: Uses `/help` endpoint on port `8008`
+
+## 🤖 Model Pre-loading and Dependencies
+
+### Embedding Models
+
+The Docker build process automatically pre-downloads embedding models using `download_models.py`:
+
+- **Default Model**: `thenlper/gte-large` (1024 dimensions, high performance)
+- **Fallback Models**: `sentence-transformers/all-MiniLM-L6-v2`, `BAAI/bge-small-en-v1.5`, `sentence-transformers/all-mpnet-base-v2`
+- **Cache Location**: `/root/.cache/huggingface` (persisted via volume mount)
+
+### Updated Dependencies
+
+The `requirements.txt` includes all necessary dependencies:
+
+```txt
+# Core MCP Framework
+mcp>=1.0.0
+
+# Web Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Configuration
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+PyYAML>=6.0.0                 # YAML parsing for alias configuration
+
+# Search Engine
+faiss-cpu>=1.7.4              # Vector similarity search
+sentence-transformers>=2.2.2  # Embedding models
+numpy>=1.24.0                 # Numerical operations
+rank-bm25>=0.2.2              # BM25 keyword search
+nltk>=3.8.1                   # Natural language processing
+beautifulsoup4>=4.12.0        # HTML parsing
+
+# System Monitoring
+psutil>=5.9.0                 # System statistics
+```
+
+## 🔧 Environment Variables
+
+All server configuration can be controlled via environment variables with the `MCP_` prefix:
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `MCP_TRANSPORT` | `stdio` | Transport protocol: `stdio`, `http`, or `https` |
+| `MCP_HOST` | `localhost` | Server host address (HTTP/HTTPS only) |
+| `MCP_PORT` | `8000` | Server port number (HTTP/HTTPS only) |
+| `MCP_SERVER_NAME` | `docs-server` | Name identifier for the MCP server |
+| `MCP_DESCRIPTION` | `company documentation` | Human-readable server description |
+| `MCP_MODEL` | `thenlper/gte-large` | Embedding model name |
+| `MCP_EMBEDDING_PATH` | `./embeddings` | Path to embedding files |
+| `MCP_EMBEDDING_NAME` | `docs_embeddings` | Name identifier for embedding files |
+| `MCP_DEVICE` | `auto` | Compute device: `cpu`, `cuda`, `mps`, `auto` |
+| `MCP_DEFAULT_VERSION` | `latest` | Default documentation version |
+| `MCP_ALIAS_FILE` | - | Path to version aliases YAML file |
+| `MCP_SSL_CERT_PATH` | - | SSL certificate path (HTTPS only) |
+| `MCP_SSL_KEY_PATH` | - | SSL private key path (HTTPS only) |
+
+### Example Environment Configuration
+
+```bash
+# Production HTTP server
+export MCP_TRANSPORT=http
+export MCP_HOST=0.0.0.0
+export MCP_PORT=8008
+export MCP_SERVER_NAME=company-docs-server
+export MCP_DESCRIPTION="Company Documentation Server"
+export MCP_MODEL=thenlper/gte-large
+export MCP_EMBEDDING_PATH=/app/embeddings
+export MCP_DEVICE=auto
+
+# Start server
+python server.py
+```
 
 ## 📖 Usage
 
