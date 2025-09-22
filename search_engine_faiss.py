@@ -18,7 +18,7 @@ import pickle
 from sentence_transformers import SentenceTransformer
 from typing import Dict, List, Optional, Iterable, Any, Union, Protocol, Callable
 
-from models import Document, DocumentChunk, SearchEngine
+from models import Document, DocumentChunk, SearchEngine, SearchEngineFactory
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -128,20 +128,18 @@ class FaissSearchEngine(SearchEngine):
                  embedding_name: str, 
                  embedding_path: Union[str, Path], 
                  model_name: str, 
-                 device: str = "auto"):
-        self._is_ready = False
+                 device: str = "auto",
+                 sentence_transformer: "ModelSentenceTransformer" = None):
+        self._name = f"FaissSearchEngine({embedding_name})"
         self._index_path = Path(embedding_path) / f"{embedding_name}.faiss" # must be .faiss format
         self._metadata_file = Path(embedding_path) / f"{embedding_name}.pkl" # must be in pickle format
         self._metadata = None
         self._model_name = model_name
         self._device = device
         self._index = None
-        self._sentence_transformer = None
+        # Shared or private ModelSentenceTransformer instance
+        self._sentence_transformer = sentence_transformer
     
-    @property
-    def is_ready(self) -> bool:
-        """Check if the search engine is ready"""
-        return self._is_ready
         
     def initialize(self) -> None:
         """Initialize the search engine"""
@@ -152,8 +150,6 @@ class FaissSearchEngine(SearchEngine):
             if not Path(self._metadata_file).exists():
                 raise FileNotFoundError(f"Metadata file not found: {self._metadata_file}")
             
-            # load model
-            self._sentence_transformer = ModelSentenceTransformer(self._model_name, self._device)
             
             # read index - convert Path to string for FAISS compatibility
             self._index = faiss.read_index(str(self._index_path))
@@ -173,11 +169,9 @@ class FaissSearchEngine(SearchEngine):
             if 'vector_mapping' not in self._metadata or 'documents' not in self._metadata:
                 raise ValueError("Invalid metadata structure: missing 'vector_mapping' or 'documents'")
             
-            self._is_ready = True
             
         except Exception as e:
             logger.error(f"Failed to initialize search engine: {e}")
-            self._is_ready = False
             raise
     
     def _should_normalize_query(self) -> bool:
@@ -205,7 +199,7 @@ class FaissSearchEngine(SearchEngine):
     
     def _search_for_chunks_internal(self, query_text: str, top_k: int = 10) -> List[DocumentChunk]:
         """Search for chunks of documents matching the query"""
-        if not self._is_ready or self._sentence_transformer is None:
+        if self._sentence_transformer is None:
             raise ValueError("Search engine is not initialized. Call initialize() first.")
             
         query_vector = self._sentence_transformer.encode([query_text]).astype('float32')
@@ -346,7 +340,7 @@ class FaissSearchEngine(SearchEngine):
     
     def get_status(self) -> List[str]:
         """Get search engine status messages"""
-        return ["Ready" if self._is_ready else "Not ready"]
+        return ["Initialized"]
 
     # was getting core dumps at program exit so extra logic 
     # required for exit
@@ -382,14 +376,14 @@ class FaissSearchEngine(SearchEngine):
             self._cleanup_faiss_index()
             self._cleanup_sentence_transformer()
             
-            # Clear metadata and reset ready state
+            # Clear metadata
             self._metadata = None
-            self._is_ready = False
             
             # Clear chunks if they exist
             if hasattr(self, 'chunks') and self.chunks is not None:
                 self.chunks.clear()
                 
+            
             # Force garbage collection
             import gc
             gc.collect()
@@ -412,4 +406,46 @@ class FaissSearchEngine(SearchEngine):
             return len(self._metadata['documents']) if self._metadata and 'documents' in self._metadata else 0
         except Exception:
             return 0
-    
+
+
+# ---------------------------------------------------------------------------
+# Factory for sharing a single SentenceTransformer across many FAISS indices
+# ---------------------------------------------------------------------------
+
+class FaissSearchEngineFactory(SearchEngineFactory):
+    """Factory that builds `FaissSearchEngine` instances on demand while
+    sharing a single `ModelSentenceTransformer` to minimise RAM/VRAM use.
+    The caller is free to cache the returned engines."""
+
+    def __init__(self, model_name: str = "thenlper/gte-large", device: str = "auto", embedding_dir: Union[str, Path] = "embeddings", embedding_prefix: str = "index-") -> None:
+        self._embedding_dir = Path(embedding_dir)
+        self._device = device
+        self._embedding_prefix = embedding_prefix
+        # Single shared model
+        self._model_name = model_name
+        self._shared_transformer: Optional[ModelSentenceTransformer] = None
+
+    def _get_sentence_transformer(self) -> "ModelSentenceTransformer":
+        """Lazily create and cache a single ModelSentenceTransformer."""
+        if self._shared_transformer is None:
+            self._shared_transformer = ModelSentenceTransformer(self._model_name, self._device)
+        return self._shared_transformer
+
+    def get_engine(self, version: str) -> SearchEngine:
+        """Create and initialize a new `FaissSearchEngine` for the given canonical version.
+        Caller (e.g., server layer) is responsible for caching if desired."""
+        st = self._get_sentence_transformer()
+        engine = FaissSearchEngine(
+            embedding_name=f"{self._embedding_prefix}{version}",
+            embedding_path=self._embedding_dir,
+            model_name=st.model_name,
+            device=self._device,
+            sentence_transformer=st,
+        )
+        engine.initialize()
+        return engine
+
+    @property
+    def transformer(self) -> "ModelSentenceTransformer":
+        """Get the shared sentence transformer instance."""
+        return self._get_sentence_transformer()

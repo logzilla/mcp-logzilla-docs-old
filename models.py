@@ -8,12 +8,12 @@ the server, search tools, and other components.
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from datetime import datetime
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Callable
-from dataclasses import dataclass, field
 
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ class DocumentChunk:
             "content": self.content,
             "metadata": self.metadata,
         }
+
 
 class Document:
     """Document model for search system"""
@@ -113,9 +114,9 @@ class SearchEngine(ABC):
     """Abstract base class for search engines"""
    
     @property
-    def is_ready(self) -> bool:
-        """Check if the search engine is ready"""
-        return getattr(self, "_is_ready", False)
+    def name(self) -> str:
+        """Get the instance name of the search engine"""
+        return getattr(self, "_name", self.__class__.__name__)
         
     @abstractmethod
     def initialize(self, on_ready_fn: Optional[Callable[[bool], None]] = None) -> None:
@@ -143,5 +144,33 @@ class SearchEngine(ABC):
 
     @classmethod
     def get_name(cls) -> str:
-        """Get search engine name"""
+        """Get search engine class name"""
         return cls.__name__
+
+
+class SearchEngineFactory(ABC):
+    """Abstract base class for search engine factories.
+    
+    Factories are responsible for creating and managing search engine instances,
+    potentially sharing resources like embedding models across multiple engines.
+    """
+    
+    @abstractmethod
+    def get_engine(self, version: str) -> SearchEngine:
+        """Create or retrieve a search engine for the specified version.
+        
+        Args:
+            version: The canonical version identifier
+            
+        Returns:
+            A ready-to-use SearchEngine instance
+            
+        Raises:
+            ValueError: If the version is not supported or engine creation fails
+        """
+        pass
+    
+    @abstractmethod
+    def clear_cache(self) -> None:
+        """Clear any cached engines and release resources."""
+        pass

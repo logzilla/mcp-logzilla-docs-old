@@ -29,9 +29,10 @@ from pydantic import BaseModel, Field, AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import sys
 from typing import Any, Dict, List, Optional, Union, Annotated, Callable, Tuple, Type
+import yaml
 
-from search_engine_faiss import FaissSearchEngine
-from models import Document, DocumentChunk
+from search_engine_faiss import FaissSearchEngine, FaissSearchEngineFactory
+from models import Document, DocumentChunk, SearchEngine, SearchEngineFactory
 
 # Load environment variables
 load_dotenv()
@@ -144,6 +145,16 @@ class ServerSettings(BaseSettings):
         default="docs_embeddings",
         description="Name identifier for embedding files"
     )
+    
+    # Version/alias handling
+    alias_file: Optional[str] = Field(
+        default=None,
+        description="Path to version to aliases YAML file (optional)"
+    )
+    default_version: str = Field(
+        default="latest",
+        description="Default version when none specified"
+    )
 
 
 class FastAppSettings:
@@ -244,22 +255,89 @@ class MCPServer:
     def __init__(self, settings: ServerSettings, device: str = "auto") -> None:
         self._settings: ServerSettings = settings
         self._device: str = device
-        self._search_engine: FaissSearchEngine = FaissSearchEngine(
-            settings.embedding_name, 
-            settings.embedding_path, 
-            settings.model_name, 
-            settings.transformer_device)
+        
+        # Create factory for shared SentenceTransformer
+        self._engine_factory: SearchEngineFactory = FaissSearchEngineFactory(
+            model_name=settings.model_name,
+            device=settings.transformer_device,
+            embedding_dir=settings.embedding_path,
+            embedding_prefix="index-"
+        )
+        
+        # Cache for search engines by canonical version
+        self._engine_cache: Dict[str, SearchEngine] = {}
+        
+        # Load alias mapping from YAML if provided
+        self._alias_to_version: Dict[str, str] = {}
+        self._valid_versions: set[str] = set()
+        self._load_alias_mapping()
+        
         self._is_ready: bool = False
         self._logger: logging.Logger = logger
         self._initialization_error: Optional[str] = None
+    
+    def _load_alias_mapping(self) -> None:
+        """Load version to aliases mapping from YAML file if provided."""
+        if not self._settings.alias_file:
+            return
+            
+        try:
+            alias_path = Path(self._settings.alias_file)
+            if not alias_path.exists():
+                self._logger.warning(f"Alias file not found, using no aliases: {alias_path}")
+                return
+                
+            with open(alias_path, 'r', encoding='utf-8') as f:
+                version_aliases = yaml.safe_load(f) or {}
+                
+            # Convert version to aliases list to alias to version mapping
+            for version, aliases in version_aliases.items():
+                self._valid_versions.add(version)
+                if aliases:
+                    for alias in aliases:
+                        self._alias_to_version[alias] = version
+                        
+            self._logger.info(f"Loaded {len(self._alias_to_version)} aliases for {len(self._valid_versions)} versions")
+            
+        except Exception as e:
+            self._logger.warning(f"Failed to load alias mapping: {e}")
+    
+    def _resolve_version(self, requested_version: Optional[str] = None) -> str:
+        """Resolve requested version to canonical version."""
+        if not requested_version:
+            requested_version = self._settings.default_version
+            
+        # Check if it's an alias
+        canonical = self._alias_to_version.get(requested_version, requested_version)
+        
+        # Validate it's a known version (if we have alias info)
+        if self._valid_versions and canonical not in self._valid_versions:
+            raise ValueError(f"Unknown version '{requested_version}'. Available: {sorted(self._valid_versions)}")
+            
+        return canonical
+    
+    def _get_search_engine(self, version: Optional[str] = None) -> SearchEngine:
+        """Get or create search engine for the specified version."""
+        canonical = self._resolve_version(version)
+        
+        if canonical not in self._engine_cache:
+            try:
+                engine = self._engine_factory.get_engine(canonical)
+                self._engine_cache[canonical] = engine
+            except Exception as e:
+                raise ValueError(f"Failed to load search engine for version '{canonical}': {e}")
+                
+        return self._engine_cache[canonical]
        
     def create_public_server(self) -> Optional[FastMCP]:
         """Create public documentation server following reference pattern."""
         try:
-            self._search_engine.initialize()
+            # Test default version engine initialization
+            default_engine = self._get_search_engine()
+            
             mcp = FastMCP(
                 name=self._settings.server_name,
-                instructions=f"Documentation server for {self._settings.description}. Provides search and retrieval of documentation.",
+                instructions=f"Documentation server for {self._settings.description}. Provides search and retrieval of documentation with version support.",
                 debug=True,
                 stateless_http=True
             )
@@ -277,7 +355,8 @@ class MCPServer:
         )
         def search_for_chunks(
                 query: Annotated[str, Field(description="Search query string", min_length=1, max_length=1000)],
-                top_k: Annotated[int, Field(description="Maximum number of results to return", ge=1, le=50)] = 10
+                top_k: Annotated[int, Field(description="Maximum number of results to return", ge=1, le=50)] = 10,
+                version: Annotated[Optional[str], Field(description="Documentation version (default: latest)")] = None
             ) -> Dict[str, Any]:
                 """Search for document chunks using the integrated search tools"""
                 # Check if server is ready
@@ -288,14 +367,17 @@ class MCPServer:
                     }
                 
                 try:
-                    chunks: List[DocumentChunk] = self._search_engine.search_for_chunks(
+                    search_engine = self._get_search_engine(version)
+                    chunks: List[DocumentChunk] = search_engine.search_for_chunks(
                         query=query,
                         top_k=top_k
                     )
+                    canonical_version = self._resolve_version(version)
                     return {
                         "status": "success",
                         "chunks": [c.to_dict() for c in chunks],
                         "query": query,
+                        "version": canonical_version,
                         "total_chunks": len(chunks)
                     }
                 except Exception as e:
@@ -310,7 +392,8 @@ class MCPServer:
         )
         def search_for_documents(
             query: Annotated[str, Field(description="Search query string", min_length=1, max_length=1000)],
-            top_k: Annotated[int, Field(description="Maximum number of results to return", ge=1, le=50)] = 10
+            top_k: Annotated[int, Field(description="Maximum number of results to return", ge=1, le=50)] = 10,
+            version: Annotated[Optional[str], Field(description="Documentation version (default: latest)")] = None
         ) -> Dict[str, Any]:
             """Search for documents and retrieve their full content"""
             # Check if server is ready
@@ -321,11 +404,14 @@ class MCPServer:
                 }
             
             try:
-                documents: List[Document] = self._search_engine.search_for_documents(query, top_k)
+                search_engine = self._get_search_engine(version)
+                documents: List[Document] = search_engine.search_for_documents(query, top_k)
+                canonical_version = self._resolve_version(version)
                 return {
                     "status": "success",
                     "documents": [d.to_dict() for d in documents],
                     "query": query,
+                    "version": canonical_version,
                     "total_documents": len(documents)
                 }
             except Exception as e:
@@ -343,15 +429,50 @@ class MCPServer:
         def health_check() -> Dict[str, Any]:
             """Check the health status of the documentation server."""
             try:
+                total_documents = 0
+                
+                # Count documents from cached engines
+                for engine in self._engine_cache.values():
+                    total_documents += getattr(engine, 'doc_count', 0)
+                
+                # If no engines cached, try to get default engine to verify service works
+                if not self._engine_cache:
+                    try:
+                        default_engine = self._get_search_engine()
+                        total_documents = getattr(default_engine, 'doc_count', 0)
+                    except Exception as e:
+                        return {
+                            "status": "error",
+                            "message": f"Service unavailable: {str(e)}"
+                        }
+                
                 return {
                     "status": "ready" if self._is_ready else "initializing",
-                    "documents_loaded": self._search_engine.doc_count,
-                    "transport": self._settings.transport
+                    "documents_loaded": total_documents,
+                    "available_versions": sorted(self._valid_versions) if self._valid_versions else ["default"],
+                    "aliases": dict(self._alias_to_version),
+                    "default_version": self._settings.default_version
                 }
             except Exception as e:
                 return {
                     "status": "error",
                     "message": f"Health check failed: {str(e)}"
+                }
+        
+        @mcp.tool()
+        def list_versions() -> Dict[str, Any]:
+            """List available documentation versions and their aliases."""
+            try:
+                return {
+                    "status": "success",
+                    "versions": sorted(self._valid_versions) if self._valid_versions else ["default"],
+                    "aliases": dict(self._alias_to_version),
+                    "default_version": self._settings.default_version
+                }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "message": f"Failed to list versions: {str(e)}"
                 }
         
         return mcp
@@ -504,6 +625,12 @@ Environment Variables:
     parser.add_argument("-e", "--embedding-name", type=str,
                        default=os.getenv("MCP_EMBEDDING_NAME", "docs_embeddings"),
                        help="Name identifier for embedding files. Default: docs_embeddings. Set via env var MCP_EMBEDDING_NAME.")
+    parser.add_argument("--alias-file", type=str,
+                       default=os.getenv("MCP_ALIAS_FILE"),
+                       help="Path to version to aliases YAML file. Set via env var MCP_ALIAS_FILE.")
+    parser.add_argument("--default-version", type=str,
+                       default=os.getenv("MCP_DEFAULT_VERSION", "latest"),
+                       help="Default documentation version. Default: latest. Set via env var MCP_DEFAULT_VERSION.")
     args: argparse.Namespace = parser.parse_args()
     
     logger.debug(f"Step 2: Args parsed - debug: {args.debug}, transport: {args.transport}")
@@ -532,7 +659,9 @@ Environment Variables:
         description=args.description,
         model_name=args.model,
         embedding_path=args.embedding_path,
-        embedding_name=args.embedding_name
+        embedding_name=args.embedding_name,
+        alias_file=args.alias_file,
+        default_version=args.default_version
     )
     
     logger.debug(f"Step 6: Settings created - {settings}")
