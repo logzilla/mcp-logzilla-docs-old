@@ -149,9 +149,9 @@ EXPECTED_RESULTS = {
 
 def ensure_test_directories():
     """Create test directories if they don't exist."""
-    TEST_DATA_DIR.mkdir(exist_ok=True)
-    TEST_EMBEDDINGS_DIR.mkdir(exist_ok=True) 
-    TEST_OUTPUT_DIR.mkdir(exist_ok=True)
+    TEST_DATA_DIR.mkdir(exist_ok=True, parents=True)
+    TEST_EMBEDDINGS_DIR.mkdir(exist_ok=True, parents=True) 
+    TEST_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
 def cleanup_test_directories():
     """Clean up test directories after tests."""

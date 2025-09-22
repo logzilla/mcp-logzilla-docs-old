@@ -198,9 +198,12 @@ class FastApp:
             allow_headers=["*"],
         )
         
-        # Mount each MCP server
+        # Mount the FastMCP app at root so its internal routes
+        # (e.g., /mcp, /.well-known/*, /register) are exposed exactly
+        # at those paths. This supports reverse proxies routing only
+        # /mcp to this upstream.
         for server in servers:
-            app.mount(f"/{server.name}/mcp", server.streamable_http_app())
+            app.mount("/", server.streamable_http_app())
 
         @app.get("/", include_in_schema=False)
         async def redirect_to_help() -> RedirectResponse:
@@ -232,7 +235,7 @@ class FastApp:
                     help_text += f"""
                     <h3>{server.name}</h3>
                     <p>{server.instructions}</p>
-                    <p><strong>Endpoint:</strong> <code>{self.app_settings.expose_url}/{server.name}/mcp</code></p>
+                    <p><strong>Endpoint:</strong> <code>{self.app_settings.expose_url}/mcp</code></p>
                     <p><strong>Tools:</strong> {', '.join(tools) if tools else 'None'}</p>
                     """
 
@@ -255,13 +258,14 @@ class MCPServer:
     def __init__(self, settings: ServerSettings, device: str = "auto") -> None:
         self._settings: ServerSettings = settings
         self._device: str = device
+        self._logger: logging.Logger = logger
         
         # Create factory for shared SentenceTransformer
         self._engine_factory: SearchEngineFactory = FaissSearchEngineFactory(
             model_name=settings.model_name,
             device=settings.transformer_device,
             embedding_dir=settings.embedding_path,
-            embedding_prefix="index-"
+            embedding_prefix=""
         )
         
         # Cache for search engines by canonical version
@@ -273,7 +277,6 @@ class MCPServer:
         self._load_alias_mapping()
         
         self._is_ready: bool = False
-        self._logger: logging.Logger = logger
         self._initialization_error: Optional[str] = None
     
     def _load_alias_mapping(self) -> None:

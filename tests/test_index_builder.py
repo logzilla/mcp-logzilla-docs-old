@@ -1,4 +1,4 @@
-# tests/test_index_builder_real.py
+# tests/test_index_builder.py
 """
 Real implementation tests for index_builder_faiss.py using actual libraries.
 """
@@ -37,8 +37,8 @@ def test_init_with_model(test_model_name, test_device, skip_if_slow):
     assert isinstance(token_count, int)
     assert token_count > 0
 
-def test_clean_html_content_with_beautifulsoup():
-    """Test HTML cleaning with real BeautifulSoup."""
+def test_html_converter():
+    """Test HTML cleaning with real BeautifulSoup using HtmlConverter class."""
     import index_builder_faiss
     
     html_content = """
@@ -60,8 +60,8 @@ def test_clean_html_content_with_beautifulsoup():
     </body></html>
     """
     
-    builder = index_builder_faiss.DocumentIndexBuilder()
-    cleaned = builder.clean_html_content(html_content)
+    converter = index_builder_faiss.HtmlConverter()
+    cleaned = converter.get_text_from_html(html_content)
     
     # Verify content extraction
     assert "# Main Title" in cleaned
@@ -357,3 +357,79 @@ def test_build_index_no_chunks_raises(test_model_name, test_device, test_output_
     # Should raise error when no valid chunks are produced
     with pytest.raises(ValueError, match="No chunks were produced from the input documents"):
         builder.build_index(documents, test_output_dir, "no_chunks_test")
+
+def test_token_cache_stats(test_model_name, test_device):
+    """Test token cache statistics functionality."""
+    import index_builder_faiss
+    
+    builder = index_builder_faiss.DocumentIndexBuilder(
+        model_name=test_model_name,
+        device=test_device
+    )
+    
+    # Initial cache should be empty
+    stats = builder.get_cache_stats()
+    assert stats['cache_size'] == 0
+    assert stats['cache_utilization_percent'] == 0
+    
+    # Count tokens to populate cache
+    texts = ["test text one", "test text two", "test text three"]
+    for text in texts:
+        builder._count_tokens(text)
+    
+    # Cache should now have entries
+    stats = builder.get_cache_stats()
+    assert stats['cache_size'] == 3
+    assert stats['cache_utilization_percent'] > 0
+
+def test_alias_yaml_generation(test_output_dir, tmp_path, monkeypatch):
+    """Test alias YAML generation from manifest."""
+    import index_builder_faiss
+    import sys
+    import json
+    
+    # Create a mock manifest file
+    manifest_path = tmp_path / "versions.json"
+    manifest_data = [
+        {"version": "1.0.0", "aliases": ["latest", "stable"]},
+        {"version": "0.9.0", "aliases": ["beta"]},
+        {"version": "0.8.0", "aliases": []}
+    ]
+    manifest_path.write_text(json.dumps(manifest_data))
+    
+    alias_file = test_output_dir / "index-aliases.yaml"
+    
+    # Mock sys.argv with alias options
+    argv = [
+        "index_builder_faiss.py",
+        "--input-directory", str(test_output_dir),
+        "--output-directory", str(test_output_dir),
+        "--index-name", "test",
+        "--manifest-path", str(manifest_path),
+        "--alias-file", str(alias_file),
+        "--update-aliases", "yes"
+    ]
+    
+    # Create dummy documents directory
+    test_output_dir.mkdir(exist_ok=True)
+    (test_output_dir / "dummy.txt").write_text("test")
+    
+    monkeypatch.setattr(sys, "argv", argv)
+    
+    # Run main
+    result = index_builder_faiss.main()
+    assert result == 0
+    
+    # Verify alias file was created
+    assert alias_file.exists()
+    
+    # Verify alias content
+    import yaml
+    with open(alias_file) as f:
+        aliases = yaml.safe_load(f)
+    
+    assert "1.0.0" in aliases
+    assert "latest" in aliases["1.0.0"]
+    assert "stable" in aliases["1.0.0"]
+    assert "beta" in aliases["0.9.0"]
+    

@@ -449,3 +449,15 @@ class FaissSearchEngineFactory(SearchEngineFactory):
     def transformer(self) -> "ModelSentenceTransformer":
         """Get the shared sentence transformer instance."""
         return self._get_sentence_transformer()
+
+    def clear_cache(self) -> None:
+        """Clear cached resources (shared sentence transformer)."""
+        if self._shared_transformer is not None:
+            try:
+                if hasattr(self._shared_transformer, "cleanup"):
+                    self._shared_transformer.cleanup()
+            except Exception:
+                # Swallow cleanup errors to avoid cascading failures
+                pass
+            finally:
+                self._shared_transformer = None

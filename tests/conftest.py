@@ -65,8 +65,9 @@ def sample_documents():
 
 @pytest.fixture
 def skip_if_slow():
-    """No-op; do not skip slow tests."""
-    return None
+    """Skip slow tests if requested."""
+    if should_skip_slow_tests():
+        pytest.skip("Skipping slow test")
 
 # Import utilities for tests
 def import_fresh(module_name: str):

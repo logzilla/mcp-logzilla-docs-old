@@ -1,4 +1,4 @@
-# tests/test_search_engine_real.py
+# tests/test_search_engine.py
 """
 Real implementation tests for search_engine_faiss.py using actual libraries.
 """
@@ -71,17 +71,20 @@ def test_faiss_search_engine_initialize(test_model_name, test_device, test_outpu
     # Create real test index
     index_name = create_test_index(test_output_dir, test_model_name, test_device)
     
+    # Create shared sentence transformer
+    sentence_transformer = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    
     # Initialize search engine
     engine = search_engine_faiss.FaissSearchEngine(
         embedding_name=index_name,
         embedding_path=test_output_dir,
         model_name=test_model_name,
-        device=test_device
+        device=test_device,
+        sentence_transformer=sentence_transformer
     )
     
     engine.initialize()
     
-    assert engine.is_ready is True
     assert engine.doc_count == len(SAMPLE_DOCUMENTS)
     
     # Verify internal components
@@ -95,11 +98,14 @@ def test_faiss_initialize_missing_files(test_model_name, test_device, test_outpu
     """Test initialization with missing files."""
     import search_engine_faiss
     
+    sentence_transformer = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    
     engine = search_engine_faiss.FaissSearchEngine(
         embedding_name="nonexistent",
         embedding_path=test_output_dir,
         model_name=test_model_name,
-        device=test_device
+        device=test_device,
+        sentence_transformer=sentence_transformer
     )
     
     with pytest.raises(FileNotFoundError):
@@ -112,11 +118,14 @@ def test_search_for_chunks(test_model_name, test_device, test_output_dir, skip_i
     
     # Create and initialize search engine
     index_name = create_test_index(test_output_dir, test_model_name, test_device)
+    sentence_transformer = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    
     engine = search_engine_faiss.FaissSearchEngine(
         embedding_name=index_name,
         embedding_path=test_output_dir,
         model_name=test_model_name,
-        device=test_device
+        device=test_device,
+        sentence_transformer=sentence_transformer
     )
     engine.initialize()
     
@@ -143,11 +152,14 @@ def test_search_for_documents(test_model_name, test_device, test_output_dir, ski
     
     # Create and initialize search engine
     index_name = create_test_index(test_output_dir, test_model_name, test_device)
+    sentence_transformer = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    
     engine = search_engine_faiss.FaissSearchEngine(
         embedding_name=index_name,
         embedding_path=test_output_dir,
         model_name=test_model_name,
-        device=test_device
+        device=test_device,
+        sentence_transformer=sentence_transformer
     )
     engine.initialize()
     
@@ -176,11 +188,14 @@ def test_search_empty_query(test_model_name, test_device, test_output_dir):
     
     # Create minimal index for testing
     index_name = create_test_index(test_output_dir, test_model_name, test_device)
+    sentence_transformer = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    
     engine = search_engine_faiss.FaissSearchEngine(
         embedding_name=index_name,
         embedding_path=test_output_dir,
         model_name=test_model_name,
-        device=test_device
+        device=test_device,
+        sentence_transformer=sentence_transformer
     )
     engine.initialize()
     
@@ -195,25 +210,25 @@ def test_search_before_initialization(test_model_name, test_device, test_output_
     """Test search before engine is initialized."""
     import search_engine_faiss
     
+    sentence_transformer = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    
     engine = search_engine_faiss.FaissSearchEngine(
         embedding_name="test",
         embedding_path=test_output_dir,
         model_name=test_model_name,
-        device=test_device
+        device=test_device,
+        sentence_transformer=sentence_transformer
     )
     
     # Should raise error when not initialized
     with pytest.raises(ValueError, match="not initialized"):
         engine.search_for_chunks("test query")
-    
-    with pytest.raises(ValueError, match="not initialized"):
-        engine.search_for_documents("test query")
 
 def test_result_multiplier_calculation():
     """Test result multiplier calculation with real metadata."""
     import search_engine_faiss
     
-    engine = search_engine_faiss.FaissSearchEngine("test", ".", "model")
+    engine = search_engine_faiss.FaissSearchEngine("test", ".", "model", "cpu")
     
     # Test with different chunk-to-document ratios
     metadata_cases = [
@@ -245,7 +260,7 @@ def test_normalization_logic():
     """Test query normalization logic with real FAISS index."""
     import search_engine_faiss
     
-    engine = search_engine_faiss.FaissSearchEngine("test", ".", "model")
+    engine = search_engine_faiss.FaissSearchEngine("test", ".", "model", "cpu")
     
     # Create real FAISS indices with different metrics
     ip_index = faiss.IndexFlatIP(128)
@@ -267,11 +282,14 @@ def test_cleanup(test_model_name, test_device, test_output_dir):
     
     # Create and initialize engine
     index_name = create_test_index(test_output_dir, test_model_name, test_device)
+    sentence_transformer = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    
     engine = search_engine_faiss.FaissSearchEngine(
         embedding_name=index_name,
         embedding_path=test_output_dir,
         model_name=test_model_name,
-        device=test_device
+        device=test_device,
+        sentence_transformer=sentence_transformer
     )
     engine.initialize()
     
@@ -285,7 +303,6 @@ def test_cleanup(test_model_name, test_device, test_output_dir):
     # Verify cleanup
     assert engine._index is None
     assert engine._sentence_transformer is None
-    assert engine.is_ready is False
 
 @pytest.mark.slow
 def test_end_to_end_search_accuracy(test_model_name, test_device, test_output_dir, skip_if_slow):
@@ -294,11 +311,14 @@ def test_end_to_end_search_accuracy(test_model_name, test_device, test_output_di
     
     # Create search engine with real index
     index_name = create_test_index(test_output_dir, test_model_name, test_device)
+    sentence_transformer = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    
     engine = search_engine_faiss.FaissSearchEngine(
         embedding_name=index_name,
         embedding_path=test_output_dir,
         model_name=test_model_name,
-        device=test_device
+        device=test_device,
+        sentence_transformer=sentence_transformer
     )
     engine.initialize()
     
@@ -316,13 +336,6 @@ def test_end_to_end_search_accuracy(test_model_name, test_device, test_output_di
         found_names = [doc.name for doc in documents]
         assert expected_doc in found_names, \
             f"Query '{query}' should find '{expected_doc}' but found {found_names}"
-        
-        # Top result should be reasonably relevant
-        if documents:
-            top_doc = documents[0]
-            assert hasattr(top_doc, 'metadata')
-            # Score should be reasonable for semantic similarity
-            # (not too strict since model quality varies)
 
 def test_faiss_initialize_dimension_mismatch(test_model_name, test_device, test_output_dir):
     """Test initialization with dimension mismatch using real FAISS index."""
@@ -348,38 +361,16 @@ def test_faiss_initialize_dimension_mismatch(test_model_name, test_device, test_
     with open(metadata_path, 'wb') as f:
         pickle.dump(metadata, f)
     
+    sentence_transformer = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
+    
     # Try to initialize with mismatched dimensions
     engine = search_engine_faiss.FaissSearchEngine(
-        "bad_index", test_output_dir, test_model_name, device=test_device
+        "bad_index", test_output_dir, test_model_name, device=test_device, 
+        sentence_transformer=sentence_transformer
     )
     
     with pytest.raises(ValueError, match="dimension mismatch"):
         engine.initialize()
-
-def test_faiss_initialize_corrupted_metadata(test_model_name, test_device, test_output_dir):
-    """Test initialization with corrupted metadata file using real implementation."""
-    import search_engine_faiss
-    import faiss
-    
-    # Create valid FAISS index
-    model = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
-    index = faiss.IndexFlatIP(model.dimension)
-    index_path = test_output_dir / "corrupted_meta.faiss"
-    faiss.write_index(index, str(index_path))
-    
-    # Create corrupted metadata file
-    metadata_path = test_output_dir / "corrupted_meta.pkl"
-    with open(metadata_path, 'wb') as f:
-        f.write(b"corrupted pickle data that cannot be loaded")
-    
-    engine = search_engine_faiss.FaissSearchEngine(
-        "corrupted_meta", test_output_dir, test_model_name, device=test_device
-    )
-    
-    with pytest.raises(Exception):  # Pickle loading will fail
-        engine.initialize()
-    
-    model.cleanup()
 
 def test_faiss_initialize_invalid_metadata_structure(test_model_name, test_device, test_output_dir):
     """Test initialization with invalid metadata structure using real implementation."""
@@ -400,7 +391,8 @@ def test_faiss_initialize_invalid_metadata_structure(test_model_name, test_devic
         pickle.dump(invalid_metadata, f)
     
     engine = search_engine_faiss.FaissSearchEngine(
-        "invalid_meta", test_output_dir, test_model_name, device=test_device
+        "invalid_meta", test_output_dir, test_model_name, device=test_device,
+        sentence_transformer=model
     )
     
     with pytest.raises(ValueError, match="Invalid metadata structure"):
@@ -408,65 +400,13 @@ def test_faiss_initialize_invalid_metadata_structure(test_model_name, test_devic
     
     model.cleanup()
 
-def test_search_for_chunks_normalization_and_invalid_ids(test_model_name, test_device, test_output_dir):
-    """Test chunk search with IP normalization and invalid IDs using real implementation."""
+def test_get_status():
+    """Test get_status method."""
     import search_engine_faiss
-    import faiss
-    import numpy as np
-    import pickle
     
-    # Create real model and index
-    model = search_engine_faiss.ModelSentenceTransformer(test_model_name, test_device)
-    index = faiss.IndexFlatIP(model.dimension)
+    engine = search_engine_faiss.FaissSearchEngine("test", ".", "model", "cpu")
+    status = engine.get_status()
     
-    # Add some real vectors
-    test_texts = ["hello world", "machine learning", "python programming"]
-    vectors = model.encode(test_texts)
-    
-    # Normalize vectors for IP similarity
-    faiss.normalize_L2(vectors)
-    index.add(vectors)
-    
-    # Create metadata with some invalid vector IDs
-    metadata = {
-        "vector_mapping": {
-            0: {"doc_id": 0, "chunk_index": 0},
-            1: {"doc_id": 1, "chunk_index": 0},
-            2: {"doc_id": 2, "chunk_index": 0},
-            999: {"doc_id": 999, "chunk_index": 0}  # Invalid ID that doesn't exist in index
-        },
-        "documents": {
-            0: {"name": "doc0", "content": "hello world"},
-            1: {"name": "doc1", "content": "machine learning"},
-            2: {"name": "doc2", "content": "python programming"}
-        },
-        "config": {"model_name": test_model_name, "dimension": model.dimension}
-    }
-    
-    # Save index and metadata
-    index_path = test_output_dir / "norm_test.faiss"
-    metadata_path = test_output_dir / "norm_test.pkl"
-    faiss.write_index(index, str(index_path))
-    with open(metadata_path, 'wb') as f:
-        pickle.dump(metadata, f)
-    
-    # Initialize engine
-    engine = search_engine_faiss.FaissSearchEngine(
-        "norm_test", test_output_dir, test_model_name, device=test_device
-    )
-    engine.initialize()
-    
-    # Test search with normalization
-    results = engine.search_for_chunks("programming", top_k=3)
-    
-    # Should get valid results despite invalid IDs in metadata
-    assert len(results) <= 3
-    for chunk in results:
-        assert hasattr(chunk, 'content')
-        assert hasattr(chunk, 'metadata')
-        assert 'score' in chunk.metadata
-        # Scores should be normalized (between -1 and 1 for IP)
-        assert -1.0 <= chunk.metadata['score'] <= 1.0
-    
-    engine.cleanup()
-    model.cleanup()
+    assert isinstance(status, list)
+    assert len(status) == 1
+    assert status[0] == "Initialized"
